@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pyodbc
+python-dotenv
+httpx
+pypdf
+reportlab
+PyMuPDF
+pywin32

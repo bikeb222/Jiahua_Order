@@ -1,0 +1,41 @@
+# Runtime state
+*.pid
+*.log
+backend/.server.pid
+frontend/.server.pid
+frontend-mobile/.server.pid
+
+# Local environments and secrets
+backend/.venv/
+.venv/
+backend/.env
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Generated reports, print spools, screenshots, and comparisons
+pdf/
+pdf_compare/
+backend/print_spool/
+*.pdf
+*.png
+
+# Production/customer data captures
+backend/get_real_process/order_context/
+backend/get_real_process/snapshots/
+
+# Local database backups and legacy OMS resource dumps
+database/
+oms_gmw/
+
+# Local scratch/history notes not needed for deployment
+123.txt
+analsys.md
+capstone.md
+prompt.md
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

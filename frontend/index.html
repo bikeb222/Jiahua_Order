@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Adding a Sales Order</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="window-shell">
+      <header class="titlebar">
+        <div class="app-mark">OMS</div>
+        <div id="pageTitle">Sales Order Processing</div>
+        <div class="connection" id="connectionStatus">checking database...</div>
+      </header>
+
+      <section id="routeMenu" class="dialog route-menu is-hidden" aria-label="Sales order actions">
+        <div class="dialog-title">
+          <span class="dialog-alert">△</span>
+          <span>Sales Order Menu</span>
+          <button id="routeExitTop" class="dialog-close" type="button">X</button>
+        </div>
+        <div class="dialog-body">
+          <fieldset class="menu-fieldset">
+            <legend>S/O Processing Menu</legend>
+            <label><input type="radio" name="routeChoice" value="add" checked /> Add</label>
+            <label><input type="radio" name="routeChoice" value="list" /> List</label>
+            <label><input type="radio" name="routeChoice" value="edit" /> Edit</label>
+          </fieldset>
+          <div class="dialog-actions">
+            <button id="routeOk" class="dialog-button" type="button">OK</button>
+            <button id="routeExit" class="dialog-button" type="button">Exit</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="orderLookupPanel" class="dialog lookup-panel is-hidden" aria-label="Order lookup">
+        <div class="dialog-title">
+          <span class="dialog-alert">△</span>
+          <span id="lookupTitle">Find Sales Order</span>
+          <button id="lookupBackButton" class="dialog-close" type="button">X</button>
+        </div>
+        <div class="dialog-body">
+          <div class="lookup-row">
+            <label>S/O # <input id="orderLookupNumber" inputmode="numeric" autocomplete="off" /></label>
+            <button id="orderLookupButton" class="dialog-button" type="button">Open</button>
+            <button id="lookupCancelButton" class="dialog-button" type="button">Back</button>
+          </div>
+          <div id="orderLookupHint" class="field-hint lookup-hint" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section id="storePanel" class="dialog store-panel is-hidden" aria-label="Chain store list">
+        <div class="dialog-title">
+          <span class="dialog-alert">△</span>
+          <span>Chain Store List</span>
+          <button id="storeCloseTop" class="dialog-close" type="button">X</button>
+        </div>
+        <div class="dialog-body">
+          <div class="store-toolbar">
+            <label>Customer ID: <input id="storeCustomerId" readonly /></label>
+          </div>
+          <div class="store-table-shell">
+            <table class="store-table">
+              <thead>
+                <tr>
+                  <th>Store Name</th>
+                  <th>Store ID</th>
+                  <th>Address</th>
+                  <th>City</th>
+                  <th>State</th>
+                  <th>Zipcode</th>
+                  <th>Phone</th>
+                </tr>
+              </thead>
+              <tbody id="storeBody"></tbody>
+            </table>
+          </div>
+          <div class="dialog-actions store-actions">
+            <button id="storeSelectButton" class="dialog-button" type="button">Select Chain Store</button>
+            <button id="storeCloseButton" class="dialog-button" type="button">Close</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="productDetailPanel" class="product-detail-panel is-hidden" aria-label="Product detail">
+        <div class="product-detail-card">
+          <div class="product-detail-title">
+            <span>Product Detail</span>
+            <button id="productDetailClose" class="dialog-close" type="button">X</button>
+          </div>
+          <div class="product-detail-body">
+            <div class="product-detail-image-wrap">
+              <img id="productDetailImage" alt="" />
+              <div id="productDetailNoImage" class="product-detail-no-image">No Image</div>
+            </div>
+            <div class="product-detail-grid">
+              <div class="detail-label">Item Code</div>
+              <div id="detailItemCode" class="detail-value"></div>
+              <div class="detail-label">Description</div>
+              <div id="detailDescription" class="detail-value detail-description"></div>
+              <div class="detail-label">Price</div>
+              <div id="detailPrices" class="detail-price-list"></div>
+              <div class="detail-label">Qty</div>
+              <div id="detailQty" class="detail-chip-row"></div>
+              <div class="detail-label">Location</div>
+              <div id="detailLocation" class="detail-chip-row"></div>
+            </div>
+          </div>
+          <div class="product-detail-actions">
+            <button id="productDetailCloseBottom" class="dialog-button product-detail-close-wide" type="button">Close</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="scanFailPanel" class="scan-fail-panel is-hidden" aria-label="Scan failed">
+        <div class="scan-fail-card">
+          <div class="scan-fail-title">Barcode Not Found</div>
+          <div id="scanFailMessage" class="scan-fail-message"></div>
+          <button id="scanFailClose" class="scan-fail-close" type="button">Close and Enter Item #</button>
+        </div>
+      </section>
+
+      <section id="customerDetailPanel" class="customer-detail-panel is-hidden" aria-label="Customer detail">
+        <div class="customer-detail-card">
+          <div class="customer-detail-title">
+            <span>Customer Detail</span>
+            <button id="customerDetailClose" class="dialog-close" type="button">X</button>
+          </div>
+          <div class="customer-detail-body">
+            <div id="customerDetailInfo" class="customer-detail-info"></div>
+            <div class="customer-history-search">
+              <label>Search Purchased Item <input id="customerProductSearch" autocomplete="off" placeholder="Item, description, or S/O #" /></label>
+              <button id="customerProductSearchButton" class="tool-button" type="button">Search</button>
+            </div>
+            <div class="customer-detail-section">
+              <div class="customer-detail-section-title">Purchased Products</div>
+              <div class="customer-detail-table-wrap">
+                <table class="customer-detail-table">
+                  <thead>
+                    <tr><th>Item #</th><th>Description</th><th>Price</th><th>Qty</th><th>S/O</th><th>Date</th></tr>
+                  </thead>
+                  <tbody id="customerPurchaseBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="customer-detail-section customer-orders-section">
+              <div class="customer-detail-section-title">Orders</div>
+              <div class="customer-detail-table-wrap">
+                <table class="customer-detail-table customer-order-table">
+                  <thead>
+                    <tr><th>S/O</th><th>Date</th><th>Items</th><th>Amount</th><th>PO #</th><th>Shipvia</th><th></th></tr>
+                  </thead>
+                  <tbody id="customerOrderBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="customer-detail-actions">
+            <button id="customerDetailCloseBottom" class="dialog-button" type="button">Close</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="orderForm" class="order-form" aria-label="Sales order form">
+        <div id="orderDetails" class="order-details">
+          <div class="row top-row">
+            <label>S/O # <input id="soNumber" value="Draft" readonly /></label>
+            <label>Date <input id="orderDate" readonly /></label>
+            <label>Ship Date <input id="shipDate" type="date" /></label>
+            <label>PO # <input id="poNumber" /></label>
+            <label>Ref # <input id="refNumber" /></label>
+          </div>
+
+          <div class="row">
+            <label>Cust # <input id="customerSearch" autocomplete="off" placeholder="Phone or customer #" /></label>
+            <button id="customerButton" class="tool-button">Search</button>
+            <button id="customerDetailButton" class="tool-button" type="button">Detail</button>
+            <span id="customerHint" class="field-hint" aria-live="polite"></span>
+            <label>Terms <input id="terms" readonly /></label>
+            <label>Terms Days <input id="termsDays" readonly /></label>
+            <label>COD <input id="cod" readonly /></label>
+            <label>Attn <input id="attention" /></label>
+          </div>
+
+          <div class="address-grid">
+            <div class="address-block">
+              <div class="block-label">Bill To</div>
+              <input id="billName" readonly />
+              <input id="billAddress" readonly />
+              <div class="row mini-row">
+                <input id="billCity" readonly />
+                <input id="billState" readonly />
+                <input id="billZip" readonly />
+              </div>
+              <label>Email <input id="email" readonly /></label>
+            </div>
+
+            <div class="address-block">
+              <div class="block-label">Ship To</div>
+              <input id="shipName" readonly />
+              <input id="shipAddress" readonly />
+              <div class="row mini-row">
+                <input id="shipCity" readonly />
+                <input id="shipState" readonly />
+                <input id="shipZip" readonly />
+              </div>
+              <label>Phone <input id="phone" readonly /></label>
+            </div>
+
+            <div class="side-fields">
+              <label class="store-field">Store # <input id="storeNumber" readonly /><button id="storeButton" class="tool-button" type="button">List</button></label>
+              <label>Shipvia <select id="shipVia"></select></label>
+              <label>Sales 1 <select id="salesOne"></select></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="scan-bar">
+          <label>Scan / Item # <input id="scanInput" autocomplete="off" placeholder="Scan barcode, then Enter" /></label>
+          <button id="scanButton" class="primary-button">Add Item</button>
+          <div id="statusText" class="status-text">Ready.</div>
+        </div>
+
+        <div id="lineTableShell" class="table-shell">
+          <table class="line-table">
+            <colgroup>
+              <col class="col-line" />
+              <col class="col-item" />
+              <col class="col-description" />
+              <col class="col-pack" />
+              <col class="col-qty" />
+              <col class="col-um" />
+              <col class="col-price" />
+              <col class="col-ext" />
+              <col class="col-action" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Ln</th>
+                <th>Item #</th>
+                <th>Description</th>
+                <th>Pack</th>
+                <th>Order Qty</th>
+                <th>UM</th>
+                <th>Price</th>
+                <th>Ext.Amount</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="lineBody">
+              <tr class="empty-row">
+                <td colspan="9">Scan a product to start the order.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <section class="totals-band" aria-label="Totals">
+          <label>Amount <input id="subtotal" readonly value="0.00" /></label>
+          <label>Discount % <input id="discount" type="number" step="0.0001" value="0.00" /></label>
+          <label>Discount Amt <input id="discountAmount" type="number" step="0.01" value="0.00" /></label>
+          <label>Tax <input id="tax" readonly value="0.00" /></label>
+          <label>Handling <input id="handling" type="number" step="0.01" value="0.00" /></label>
+          <label class="total-field">Total <input id="total" readonly value="0.00" /></label>
+          <label class="balance-field">Balance <input id="balance" readonly value="0.00" /></label>
+        </section>
+
+        <footer class="action-row">
+          <div class="action-primary">
+            <button id="saveTestButton" class="primary-button">Save Order</button>
+            <button id="printInvoiceButton" class="tool-button">Print CSO</button>
+            <button id="printPickListButton" class="tool-button">Print Pick List</button>
+          </div>
+          <div class="action-navigation">
+            <button id="menuButton" class="tool-button">Menu</button>
+            <button id="closeButton" class="danger-button">Back</button>
+          </div>
+        </footer>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
