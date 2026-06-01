@@ -251,30 +251,204 @@
     }
   },
   "barcode_and_item_lookup": {
-    "api": "GET /api/products/lookup/{code}?customerType=<CUS_TYPE>",
-    "input_triggers": [
-      "Scanner sends Enter",
-      "Scanner sends Tab",
-      "Manual Add Item button"
+    "purpose": "Reusable OMS barcode / item-number scan logic. This is the current web app behavior that has been tested well with scanners that send either Enter or Tab after the code.",
+    "high_level_flow": [
+      "Scanner or user enters a code into Scan / Item #.",
+      "Frontend accepts Enter and Tab as scan-complete keys.",
+      "Frontend trims the entered code and calls GET /api/products/lookup/{code}?customerType={customer type}.",
+      "Backend expands the raw code into several candidate variants so UPC, item number, leading-zero UPC, and check-digit variants can all match.",
+      "Backend searches inventory master and UPC alias tables, then enriches the product with customer-level price and warehouse availability.",
+      "Frontend either increments an existing line for the same item or adds a new order line with qty 1.",
+      "If lookup fails, no line is added; desktop keeps focus in scan input, iPad shows a large failure dialog and enters manual item-number input mode."
     ],
-    "candidate_generation": [
-      "raw trimmed input",
-      "input with all whitespace removed",
-      "if numeric: remove leading zeros",
-      "if numeric length >= 12: remove last digit/check digit",
-      "if numeric and starts with 0: remove the first 0",
-      "if numeric starts with 0 and length > 12: remove first 0 and last digit"
-    ],
-    "database_match_order": [
-      "TRIM(inv.PROD_CD) IN candidates",
-      "TRIM(inv.UPC_CD) IN candidates",
-      "TRIM(inv_upc.UPC_CD) IN candidates"
-    ],
-    "on_success": {
-      "existing_line": "Increment quantity by 1 and recalculate extAmount.",
-      "new_line": "Add line with quantity 1, warehouse 1, product description, pack, unit, tax indicator, selected customer price, available W1 quantity."
+    "frontend_input_behavior": {
+      "accepted_scanner_suffix_keys": [
+        "Enter",
+        "Tab"
+      ],
+      "why_tab_is_supported": "Some barcode scanners submit the scanned value with Tab instead of Enter. Tab is handled exactly like Enter and preventDefault is used so focus does not jump away.",
+      "input_normalization": "Use scanInput.value.trim(); empty strings are ignored.",
+      "desktop_file": "frontend/app.js",
+      "ipad_file": "frontend-mobile/app.js",
+      "important_behavior": [
+        "Scanning must remain usable even when the custom floating keyboard exists; the keyboard is only an input helper.",
+        "After a successful scan, the scan box is cleared and focus returns to it so the next scan can happen immediately.",
+        "After editing QTY or price with a floating keypad and pressing OK, focus returns to Scan / Item #."
+      ],
+      "pseudocode": [
+        "scanInput.addEventListener('keydown', event => {",
+        "  if (event.key !== 'Enter' && event.key !== 'Tab') return;",
+        "  event.preventDefault();",
+        "  const code = scanInput.value.trim();",
+        "  if (!code) return;",
+        "  await addScannedProduct(code);",
+        "});"
+      ]
     },
-    "on_failure": "Show barcode-not-found/manual-entry prompt."
+    "api_contract": {
+      "endpoint": "GET /api/products/lookup/{code}",
+      "query_parameters": {
+        "customerType": "Optional customer business/type level used to choose the unit price returned to the order line."
+      },
+      "success_response_contains": [
+        "productCode",
+        "description",
+        "description1",
+        "description2",
+        "unitName",
+        "unitPrice",
+        "priceLevels L1-L5/L6-style source values",
+        "taxInd",
+        "piecesPerCase",
+        "boxesPerCase",
+        "upc",
+        "matchedUpc",
+        "showroomLocation",
+        "imageUrl",
+        "inventorySummary"
+      ],
+      "failure_response": "404 / not found. Frontend should not create an order line."
+    },
+    "backend_candidate_generation": {
+      "function_name": "lookup_code_variants(value)",
+      "current_backend_file": "backend/app/main.py",
+      "rules_in_order": [
+        "Strip leading/trailing whitespace from the raw value.",
+        "Add the raw trimmed value.",
+        "Remove all inner whitespace and add the compact value.",
+        "If compact value is numeric, add compact.lstrip('0') to support leading-zero UPC scans.",
+        "If compact numeric length is 12 or more, add compact[:-1] to support scanners/data where UPC check digit differs or is omitted.",
+        "If the no-leading-zero numeric value is length 12 or more, add without_leading_zero[:-1].",
+        "If compact starts with 0, add compact[1:] and, when length is greater than 12, compact[1:-1].",
+        "De-duplicate while preserving order."
+      ],
+      "example_intent": {
+        "item_number_scan": "JH02428 should match inv.PROD_CD directly.",
+        "upc_scan": "A scanner UPC should match inv.UPC_CD or inv_upc.UPC_CD.",
+        "leading_zero_upc": "A UPC with or without the leading 0 should still be tried.",
+        "check_digit_variant": "A numeric UPC with an extra trailing check digit should still be tried without the last digit."
+      },
+      "pseudocode": [
+        "raw = clean_code(value)",
+        "variants = [raw]",
+        "compact = ''.join(raw.split())",
+        "add(compact)",
+        "if compact.isdigit():",
+        "  add(compact.lstrip('0'))",
+        "  if len(compact) >= 12: add(compact[:-1])",
+        "  if compact.startswith('0'): add(compact[1:]); add(compact[1:-1] when long enough)",
+        "return unique_non_empty_variants_in_order"
+      ]
+    },
+    "database_lookup_logic": {
+      "primary_tables": {
+        "dbo.inv": "Inventory/product master. Contains PROD_CD, DESCR, DESCR_1/2, UPC_CD, price levels, pack/unit fields, tax flag, image/location fields.",
+        "dbo.inv_upc": "Additional UPC aliases. Joined by PROD_CD and searched by UPC_CD.",
+        "dbo.inv_data": "Warehouse inventory detail. Used after product match to compute W1/W2/W6 and total availability."
+      },
+      "match_priority": [
+        "Exact product code match against the first/raw candidate is ranked first.",
+        "Other product-code, master UPC, and alias UPC matches are accepted from the candidate list.",
+        "TOP 1 is returned, ordered by exact raw product code first, then product code for stable results."
+      ],
+      "sql_shape": [
+        "SELECT TOP 1 product fields FROM dbo.inv AS i",
+        "LEFT JOIN dbo.inv_upc AS iu ON iu.PROD_CD = i.PROD_CD AND LTRIM(RTRIM(iu.UPC_CD)) IN (:variants)",
+        "WHERE LTRIM(RTRIM(i.PROD_CD)) IN (:variants)",
+        "   OR LTRIM(RTRIM(i.UPC_CD)) IN (:variants)",
+        "   OR LTRIM(RTRIM(iu.UPC_CD)) IN (:variants)",
+        "ORDER BY CASE WHEN LTRIM(RTRIM(i.PROD_CD)) = :raw_candidate THEN 0 ELSE 1 END, LTRIM(RTRIM(i.PROD_CD))"
+      ],
+      "implementation_note": "Use parameterized queries for the candidate list. Do not string-concatenate scanned codes into SQL."
+    },
+    "inventory_enrichment": {
+      "table": "dbo.inv_data",
+      "grouping": "Group by WHS_NUM for the matched PROD_CD.",
+      "fields_computed": {
+        "inStock": "SUM(IN_STOCK)",
+        "orderQty": "SUM(ORDER_QTY)",
+        "availableQty": "SUM(IN_STOCK - ORDER_QTY)",
+        "onOrderQty": "SUM(ON_ORDER_QTY)",
+        "backQty": "SUM(BACK_QTY)",
+        "location": "MAX(INV_LOC) or warehouse location field"
+      },
+      "ui_usage": [
+        "Product Detail shows W1/W2/W6 and total inventory information.",
+        "If W1 availability is negative, the product/detail row is highlighted red so no-stock items are obvious."
+      ]
+    },
+    "price_selection_after_lookup": {
+      "function_name": "customer_unit_price(product, customerType)",
+      "customer_type_mapping": {
+        "0_or_1": "retailPrice / PRICE_1 style normal customer price",
+        "2": "corporatePrice first, fallback retailPrice",
+        "3": "wholesalePrice first, fallback retailPrice",
+        "4": "wholesalePrice2 first, fallback wholesalePrice, then retailPrice. This is used by internal employee level 4 customers such as 7186639333.",
+        "5": "wholesalePrice3 first, fallback wholesalePrice2, wholesalePrice, retailPrice"
+      },
+      "important_example": "For customer 7186639333 / level 4, item 254694 should use 16.5 instead of the level 1 price 17.95.",
+      "frontend_rule": "The order line price uses product.unitPrice returned by the lookup endpoint, not a hard-coded frontend price."
+    },
+    "frontend_line_update_after_success": {
+      "existing_item_behavior": "If productCode already exists in the order lines, increment that line's orderQty by 1 and recalculate extAmount/totals.",
+      "new_item_defaults": {
+        "warehouse": "1",
+        "orderQty": 1,
+        "unitName": "product.unitName or PC",
+        "price": "product.unitPrice",
+        "pack": "product.piecesPerCase",
+        "taxable": "product.taxInd or N",
+        "available": "inventorySummary W1/total value when available"
+      },
+      "after_add": [
+        "Clear scan input.",
+        "Show status message such as Added {productCode} {description}.",
+        "Focus scan input for next scan.",
+        "On iPad scan mode, keep list scroll behavior so newest row and fixed scan/total areas remain usable."
+      ]
+    },
+    "failure_behavior": {
+      "desktop": "Show a lookup/scan failure message, keep or restore focus to Scan / Item #, and allow the user to scan again.",
+      "ipad": "Show a large failure dialog with a large close button. After closing, enter manual item-number input state with the alphanumeric floating keyboard visible.",
+      "do_not_add_line": true,
+      "reason": "A failed barcode may be a bad UPC alias or scanner formatting issue; creating a blank or partial line would corrupt the order."
+    },
+    "manual_keyboard_behavior": {
+      "where_used": [
+        "Scan / Item #",
+        "Search Purchased Item",
+        "Processing Menu List/Edit S/O number fields"
+      ],
+      "scan_item_keyboard": "Alphanumeric keyboard is only an input helper. Clicking the input toggles keyboard visibility; scanner Enter/Tab still works even if the keyboard is hidden or visible.",
+      "numeric_keyboards": "Numeric keypads include DEL, 0, OK on the final row; decimal keypads also include dot where needed.",
+      "editing_rule": "Text inputs should allow cursor placement in the middle and DEL should remove one character before the cursor, not only from the end."
+    },
+    "known_good_edge_cases": [
+      "Scanners that submit Enter work.",
+      "Scanners that submit Tab work.",
+      "Direct OMS item numbers such as JH02428 work.",
+      "UPC aliases in dbo.inv_upc work.",
+      "Leading-zero and dropped-check-digit UPC variants are tried automatically.",
+      "Items JH228471 and JH228474 previously failed until candidate/UPC logic was checked; preserve this alias-oriented lookup behavior."
+    ],
+    "files_to_copy_when_reusing": {
+      "backend": [
+        "backend/app/main.py: lookup_code_variants",
+        "backend/app/main.py: /api/products/lookup/{code}",
+        "backend/app/main.py: customer_unit_price"
+      ],
+      "frontend_desktop": [
+        "frontend/app.js: productLookupPath",
+        "frontend/app.js: addScannedProduct",
+        "frontend/app.js: scanInput keydown Enter/Tab handler"
+      ],
+      "frontend_ipad": [
+        "frontend-mobile/app.js: productLookupPath",
+        "frontend-mobile/app.js: addScannedProduct",
+        "frontend-mobile/app.js: scanInput keydown Enter/Tab handler",
+        "frontend-mobile/app.js: scan failure dialog and manual keyboard flow"
+      ]
+    }
   },
   "pricing": {
     "driver": "customer.CUS_TYPE",
@@ -876,5 +1050,205 @@
       "Rare commission, approval, tax, freight, payment, delivery, EDI, and cancellation workflows should be verified with snapshots before expanding writes.",
       "invoice/ins_data/invt_log side effects are not part of the current sales-order save surface."
     ]
+  },
+  "barcode_scan_logic_reusable": {
+    "purpose": "Reusable OMS barcode / item-number scan logic. This is the current web app behavior that has been tested well with scanners that send either Enter or Tab after the code.",
+    "high_level_flow": [
+      "Scanner or user enters a code into Scan / Item #.",
+      "Frontend accepts Enter and Tab as scan-complete keys.",
+      "Frontend trims the entered code and calls GET /api/products/lookup/{code}?customerType={customer type}.",
+      "Backend expands the raw code into several candidate variants so UPC, item number, leading-zero UPC, and check-digit variants can all match.",
+      "Backend searches inventory master and UPC alias tables, then enriches the product with customer-level price and warehouse availability.",
+      "Frontend either increments an existing line for the same item or adds a new order line with qty 1.",
+      "If lookup fails, no line is added; desktop keeps focus in scan input, iPad shows a large failure dialog and enters manual item-number input mode."
+    ],
+    "frontend_input_behavior": {
+      "accepted_scanner_suffix_keys": [
+        "Enter",
+        "Tab"
+      ],
+      "why_tab_is_supported": "Some barcode scanners submit the scanned value with Tab instead of Enter. Tab is handled exactly like Enter and preventDefault is used so focus does not jump away.",
+      "input_normalization": "Use scanInput.value.trim(); empty strings are ignored.",
+      "desktop_file": "frontend/app.js",
+      "ipad_file": "frontend-mobile/app.js",
+      "important_behavior": [
+        "Scanning must remain usable even when the custom floating keyboard exists; the keyboard is only an input helper.",
+        "After a successful scan, the scan box is cleared and focus returns to it so the next scan can happen immediately.",
+        "After editing QTY or price with a floating keypad and pressing OK, focus returns to Scan / Item #."
+      ],
+      "pseudocode": [
+        "scanInput.addEventListener('keydown', event => {",
+        "  if (event.key !== 'Enter' && event.key !== 'Tab') return;",
+        "  event.preventDefault();",
+        "  const code = scanInput.value.trim();",
+        "  if (!code) return;",
+        "  await addScannedProduct(code);",
+        "});"
+      ]
+    },
+    "api_contract": {
+      "endpoint": "GET /api/products/lookup/{code}",
+      "query_parameters": {
+        "customerType": "Optional customer business/type level used to choose the unit price returned to the order line."
+      },
+      "success_response_contains": [
+        "productCode",
+        "description",
+        "description1",
+        "description2",
+        "unitName",
+        "unitPrice",
+        "priceLevels L1-L5/L6-style source values",
+        "taxInd",
+        "piecesPerCase",
+        "boxesPerCase",
+        "upc",
+        "matchedUpc",
+        "showroomLocation",
+        "imageUrl",
+        "inventorySummary"
+      ],
+      "failure_response": "404 / not found. Frontend should not create an order line."
+    },
+    "backend_candidate_generation": {
+      "function_name": "lookup_code_variants(value)",
+      "current_backend_file": "backend/app/main.py",
+      "rules_in_order": [
+        "Strip leading/trailing whitespace from the raw value.",
+        "Add the raw trimmed value.",
+        "Remove all inner whitespace and add the compact value.",
+        "If compact value is numeric, add compact.lstrip('0') to support leading-zero UPC scans.",
+        "If compact numeric length is 12 or more, add compact[:-1] to support scanners/data where UPC check digit differs or is omitted.",
+        "If the no-leading-zero numeric value is length 12 or more, add without_leading_zero[:-1].",
+        "If compact starts with 0, add compact[1:] and, when length is greater than 12, compact[1:-1].",
+        "De-duplicate while preserving order."
+      ],
+      "example_intent": {
+        "item_number_scan": "JH02428 should match inv.PROD_CD directly.",
+        "upc_scan": "A scanner UPC should match inv.UPC_CD or inv_upc.UPC_CD.",
+        "leading_zero_upc": "A UPC with or without the leading 0 should still be tried.",
+        "check_digit_variant": "A numeric UPC with an extra trailing check digit should still be tried without the last digit."
+      },
+      "pseudocode": [
+        "raw = clean_code(value)",
+        "variants = [raw]",
+        "compact = ''.join(raw.split())",
+        "add(compact)",
+        "if compact.isdigit():",
+        "  add(compact.lstrip('0'))",
+        "  if len(compact) >= 12: add(compact[:-1])",
+        "  if compact.startswith('0'): add(compact[1:]); add(compact[1:-1] when long enough)",
+        "return unique_non_empty_variants_in_order"
+      ]
+    },
+    "database_lookup_logic": {
+      "primary_tables": {
+        "dbo.inv": "Inventory/product master. Contains PROD_CD, DESCR, DESCR_1/2, UPC_CD, price levels, pack/unit fields, tax flag, image/location fields.",
+        "dbo.inv_upc": "Additional UPC aliases. Joined by PROD_CD and searched by UPC_CD.",
+        "dbo.inv_data": "Warehouse inventory detail. Used after product match to compute W1/W2/W6 and total availability."
+      },
+      "match_priority": [
+        "Exact product code match against the first/raw candidate is ranked first.",
+        "Other product-code, master UPC, and alias UPC matches are accepted from the candidate list.",
+        "TOP 1 is returned, ordered by exact raw product code first, then product code for stable results."
+      ],
+      "sql_shape": [
+        "SELECT TOP 1 product fields FROM dbo.inv AS i",
+        "LEFT JOIN dbo.inv_upc AS iu ON iu.PROD_CD = i.PROD_CD AND LTRIM(RTRIM(iu.UPC_CD)) IN (:variants)",
+        "WHERE LTRIM(RTRIM(i.PROD_CD)) IN (:variants)",
+        "   OR LTRIM(RTRIM(i.UPC_CD)) IN (:variants)",
+        "   OR LTRIM(RTRIM(iu.UPC_CD)) IN (:variants)",
+        "ORDER BY CASE WHEN LTRIM(RTRIM(i.PROD_CD)) = :raw_candidate THEN 0 ELSE 1 END, LTRIM(RTRIM(i.PROD_CD))"
+      ],
+      "implementation_note": "Use parameterized queries for the candidate list. Do not string-concatenate scanned codes into SQL."
+    },
+    "inventory_enrichment": {
+      "table": "dbo.inv_data",
+      "grouping": "Group by WHS_NUM for the matched PROD_CD.",
+      "fields_computed": {
+        "inStock": "SUM(IN_STOCK)",
+        "orderQty": "SUM(ORDER_QTY)",
+        "availableQty": "SUM(IN_STOCK - ORDER_QTY)",
+        "onOrderQty": "SUM(ON_ORDER_QTY)",
+        "backQty": "SUM(BACK_QTY)",
+        "location": "MAX(INV_LOC) or warehouse location field"
+      },
+      "ui_usage": [
+        "Product Detail shows W1/W2/W6 and total inventory information.",
+        "If W1 availability is negative, the product/detail row is highlighted red so no-stock items are obvious."
+      ]
+    },
+    "price_selection_after_lookup": {
+      "function_name": "customer_unit_price(product, customerType)",
+      "customer_type_mapping": {
+        "0_or_1": "retailPrice / PRICE_1 style normal customer price",
+        "2": "corporatePrice first, fallback retailPrice",
+        "3": "wholesalePrice first, fallback retailPrice",
+        "4": "wholesalePrice2 first, fallback wholesalePrice, then retailPrice. This is used by internal employee level 4 customers such as 7186639333.",
+        "5": "wholesalePrice3 first, fallback wholesalePrice2, wholesalePrice, retailPrice"
+      },
+      "important_example": "For customer 7186639333 / level 4, item 254694 should use 16.5 instead of the level 1 price 17.95.",
+      "frontend_rule": "The order line price uses product.unitPrice returned by the lookup endpoint, not a hard-coded frontend price."
+    },
+    "frontend_line_update_after_success": {
+      "existing_item_behavior": "If productCode already exists in the order lines, increment that line's orderQty by 1 and recalculate extAmount/totals.",
+      "new_item_defaults": {
+        "warehouse": "1",
+        "orderQty": 1,
+        "unitName": "product.unitName or PC",
+        "price": "product.unitPrice",
+        "pack": "product.piecesPerCase",
+        "taxable": "product.taxInd or N",
+        "available": "inventorySummary W1/total value when available"
+      },
+      "after_add": [
+        "Clear scan input.",
+        "Show status message such as Added {productCode} {description}.",
+        "Focus scan input for next scan.",
+        "On iPad scan mode, keep list scroll behavior so newest row and fixed scan/total areas remain usable."
+      ]
+    },
+    "failure_behavior": {
+      "desktop": "Show a lookup/scan failure message, keep or restore focus to Scan / Item #, and allow the user to scan again.",
+      "ipad": "Show a large failure dialog with a large close button. After closing, enter manual item-number input state with the alphanumeric floating keyboard visible.",
+      "do_not_add_line": true,
+      "reason": "A failed barcode may be a bad UPC alias or scanner formatting issue; creating a blank or partial line would corrupt the order."
+    },
+    "manual_keyboard_behavior": {
+      "where_used": [
+        "Scan / Item #",
+        "Search Purchased Item",
+        "Processing Menu List/Edit S/O number fields"
+      ],
+      "scan_item_keyboard": "Alphanumeric keyboard is only an input helper. Clicking the input toggles keyboard visibility; scanner Enter/Tab still works even if the keyboard is hidden or visible.",
+      "numeric_keyboards": "Numeric keypads include DEL, 0, OK on the final row; decimal keypads also include dot where needed.",
+      "editing_rule": "Text inputs should allow cursor placement in the middle and DEL should remove one character before the cursor, not only from the end."
+    },
+    "known_good_edge_cases": [
+      "Scanners that submit Enter work.",
+      "Scanners that submit Tab work.",
+      "Direct OMS item numbers such as JH02428 work.",
+      "UPC aliases in dbo.inv_upc work.",
+      "Leading-zero and dropped-check-digit UPC variants are tried automatically.",
+      "Items JH228471 and JH228474 previously failed until candidate/UPC logic was checked; preserve this alias-oriented lookup behavior."
+    ],
+    "files_to_copy_when_reusing": {
+      "backend": [
+        "backend/app/main.py: lookup_code_variants",
+        "backend/app/main.py: /api/products/lookup/{code}",
+        "backend/app/main.py: customer_unit_price"
+      ],
+      "frontend_desktop": [
+        "frontend/app.js: productLookupPath",
+        "frontend/app.js: addScannedProduct",
+        "frontend/app.js: scanInput keydown Enter/Tab handler"
+      ],
+      "frontend_ipad": [
+        "frontend-mobile/app.js: productLookupPath",
+        "frontend-mobile/app.js: addScannedProduct",
+        "frontend-mobile/app.js: scanInput keydown Enter/Tab handler",
+        "frontend-mobile/app.js: scan failure dialog and manual keyboard flow"
+      ]
+    }
   }
 }
