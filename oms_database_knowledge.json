@@ -1,0 +1,409 @@
+{
+  "name": "Jia Hua OMS Database Knowledge",
+  "database": {
+    "engine": "Microsoft SQL Server",
+    "production_database": "omsdata",
+    "local_development_database": "omsdata_local",
+    "backend_only_access": true,
+    "frontend_direct_db_access": false,
+    "connection_environment_variables": {
+      "read": "ORDER_READ_DB_CONNECTION",
+      "write": "ORDER_WRITE_DB_CONNECTION",
+      "fallback": "ORDER_DB_CONNECTION",
+      "local_development_example": "Driver={ODBC Driver 18 for SQL Server};Server=.\\OMSDEV;Database=omsdata_local;Trusted_Connection=yes;TrustServerCertificate=yes;",
+      "production_shape_example": "DSN=<dsn_name>;DATABASE=omsdata;",
+      "do_not_commit": [
+        "backend/.env",
+        "real usernames/passwords",
+        "production snapshots",
+        "database backups"
+      ]
+    },
+    "safety_flags": {
+      "allow_production_read": "ORDER_ALLOW_PRODUCTION_READ=true",
+      "enable_app_write": "ORDER_ENABLE_APP_WRITE=true",
+      "enable_production_write": "ORDER_ENABLE_PRODUCTION_OMS_WRITE=true",
+      "production_write_ack": "ORDER_PRODUCTION_WRITE_ACK=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION_OMS"
+    }
+  },
+  "data_formats": {
+    "clarion_date": {
+      "type": "int",
+      "meaning": "Days offset from Clarion epoch. Backend converts between ISO yyyy-mm-dd and OMS integer dates.",
+      "used_by": [
+        "orders.ORD_DT",
+        "orders.SHIP_DT",
+        "ord_log.OLG_DT",
+        "ord_log.SHIP_DT",
+        "cus_invt.INVS_DT"
+      ]
+    },
+    "clarion_time": {
+      "type": "int",
+      "meaning": "Hundredths-of-second style OMS time integer generated from current time.",
+      "used_by": [
+        "ord_log.OLG_TIME",
+        "invt_log.LOG_TIME",
+        "sys_log.SYS_TM"
+      ]
+    },
+    "strings": {
+      "note": "Most OMS char/varchar fields should be trimmed on read and clipped to field length on write.",
+      "common_lengths": {
+        "CUS_ID": 11,
+        "PROD_CD": 21,
+        "PO_NUM": 20,
+        "STORE_NUM": 12
+      }
+    },
+    "money_and_quantity": {
+      "note": "OMS commonly stores money and quantities as decimal fields. Convert with Decimal/float carefully and round only for display."
+    }
+  },
+  "core_tables": {
+    "customer": {
+      "purpose": "Customer master record.",
+      "key_columns": {
+        "CUS_ID": "Customer number / phone-like customer id.",
+        "CUS_NM": "Customer name.",
+        "ADDR_1": "Billing address line 1.",
+        "ADDR_2": "Billing address line 2.",
+        "CITY": "Billing city.",
+        "STATE": "Billing state.",
+        "ZIPCODE": "Billing zip.",
+        "SHIP_CUS_NM": "Default shipping name if separate from billing.",
+        "SHIP_ADDR_1": "Default shipping address line 1.",
+        "SHIP_ADDR_2": "Default shipping address line 2.",
+        "SHIP_CITY": "Default shipping city.",
+        "SHIP_STATE": "Default shipping state.",
+        "SHIP_ZIP": "Default shipping zip.",
+        "PHONE_1": "Customer phone.",
+        "EMAIL": "Customer email.",
+        "TERMS_DESC": "Terms display text, for example COD Cash.",
+        "TERMS_DAY": "Terms days.",
+        "COD": "COD flag.",
+        "SHIP_VIA": "Default ship via.",
+        "SALES_NUM": "Default sales person.",
+        "TAX_RATE": "Customer tax rate.",
+        "CUS_TYPE": "Business type / price level driver."
+      },
+      "read_patterns": [
+        "Search by CUS_ID, phone, or matching customer text.",
+        "After selecting a customer, load full customer record and use CUS_TYPE for item pricing."
+      ]
+    },
+    "chn_str": {
+      "purpose": "Chain store / multi ship-to store list for one customer.",
+      "key_columns": {
+        "CUS_ID": "Parent customer id.",
+        "STR_NUM": "Store number.",
+        "CUS_NM": "Store name.",
+        "ADDR_1": "Store address.",
+        "CITY": "Store city.",
+        "STATE": "Store state.",
+        "ZIPCODE": "Store zip.",
+        "PHONE_1": "Store phone."
+      },
+      "business_rule": "If customer has multiple stores, user chooses a store; selected store becomes order ship-to and STORE_NUM."
+    },
+    "inv": {
+      "purpose": "Product/item master.",
+      "key_columns": {
+        "PROD_CD": "Item number.",
+        "DESCRIP": "Main description.",
+        "DESCRIP1": "Additional description.",
+        "DESCRIP2": "Additional description.",
+        "UNIT_NM": "Unit name, for example DZ/BX/PC.",
+        "PC_CASE": "Pieces per case / pack.",
+        "BOX_CASE": "Boxes per case.",
+        "UPC_CD": "Primary UPC/barcode.",
+        "TAX_IND": "Tax indicator.",
+        "IMAGE_NM": "Product image name.",
+        "UNIT_COLOR": "Used by current app as showroom location.",
+        "RETAIL_PRS": "Level 1 / retail price fallback.",
+        "WHOLE_PRS": "Wholesale price.",
+        "WHOLE_PRS2": "Level 4 employee/internal price source.",
+        "WHOLE_PRS3": "Higher wholesale price source.",
+        "CORP_PRS": "Corporate price.",
+        "PRICE_1": "Price level 1 display field if present.",
+        "PRICE_2": "Price level 2 display field if present.",
+        "PRICE_3": "Price level 3 display field if present.",
+        "PRICE_4": "Price level 4 display field if present.",
+        "PRICE_5": "Price level 5 display field if present.",
+        "PRICE_6": "Extra price level field."
+      }
+    },
+    "inv_upc": {
+      "purpose": "Additional UPC/barcode mapping table.",
+      "key_columns": {
+        "PROD_CD": "Item number.",
+        "UPC_CD": "Alternate UPC/barcode."
+      },
+      "lookup_rule": "Barcode lookup should check inv.PROD_CD, inv.UPC_CD, and inv_upc.UPC_CD."
+    },
+    "inv_data": {
+      "purpose": "Inventory quantity by product and warehouse.",
+      "key_columns": {
+        "PROD_CD": "Item number.",
+        "WHS_NUM": "Warehouse number, current order entry uses warehouse 1.",
+        "IN_STOCK": "Quantity in stock.",
+        "ORDER_QTY": "Quantity reserved/on sales orders.",
+        "ON_ORDER_QTY": "Purchase/on-order quantity.",
+        "BACK_QTY": "Backorder quantity.",
+        "INV_LOC": "Warehouse location."
+      },
+      "available_quantity_formula": "availableQty = IN_STOCK - ORDER_QTY",
+      "write_rule": "When sales order lines are inserted/updated/deleted, adjust ORDER_QTY in inv_data inside the same transaction."
+    },
+    "orders": {
+      "purpose": "Sales order header.",
+      "key_columns": {
+        "ORD_NUM": "Sales order number / S/O #.",
+        "CUS_ID": "Customer id.",
+        "ORD_DT": "Order date in Clarion date integer.",
+        "SHIP_DT": "Ship date in Clarion date integer.",
+        "ORD_AMT": "Order total.",
+        "PAID_AMT": "Paid amount, usually 0 for current web orders.",
+        "INVS_TAX": "Tax amount.",
+        "TAX_RATE": "Tax rate.",
+        "DISC_AMT": "Discount amount.",
+        "DISCOUNT": "Discount percent.",
+        "HANDL_FEE": "Handling fee.",
+        "PO_NUM": "Customer PO number.",
+        "REF_NUM": "Reference number.",
+        "SALES_NUM": "Sales person.",
+        "SHIP_VIA": "Ship via text.",
+        "STORE_NUM": "Selected chain store number.",
+        "SOLD_TO": "Current web app writes 'Order by IPad' for iPad-origin orders.",
+        "SP_CUS_NM": "Current web app leaves blank for new iPad-origin orders.",
+        "COD_DESC": "COD flag/description."
+      },
+      "read_rule": "Order header is read from orders and joined to customer for display fallback fields."
+    },
+    "ord_log": {
+      "purpose": "Sales order line items.",
+      "key_columns": {
+        "Id": "Identity primary key for line row.",
+        "ORD_NUM": "Sales order number.",
+        "CUS_ID": "Customer id.",
+        "PROD_CD": "Item number.",
+        "UT_DESC": "Line description.",
+        "PROD_QTY": "Ordered quantity.",
+        "ORDER_QTY": "Ordered quantity / reserved quantity.",
+        "INVS_QTY": "Shipped/invoiced quantity.",
+        "UNIT_PRS": "Unit price.",
+        "PCK_QTY": "Pack quantity.",
+        "DEF_UT": "Unit name.",
+        "WHS_NUM": "Warehouse number.",
+        "TAX_IND": "Tax indicator.",
+        "NT_NUM": "Line number.",
+        "COMM_LN": "Line id / order line sequence.",
+        "SHIP_DT": "Line ship date in Clarion date integer.",
+        "OLG_DT": "Log/order date in Clarion date integer.",
+        "OLG_TIME": "Log time integer."
+      },
+      "write_rule": "For edits, existing ord_log rows are updated/deleted/inserted to match the submitted line list."
+    },
+    "so_divs": {
+      "purpose": "Sales order division/detail companion rows.",
+      "key_columns": {
+        "ORD_NUM": "Sales order number.",
+        "TYPE_CD": "Type code.",
+        "INVS_CD": "Invoice code.",
+        "DIV_CD": "Division code.",
+        "DEPT_CD": "Department code."
+      },
+      "write_rule": "Ensure a row exists for new order. Current app updates or inserts by ORD_NUM."
+    },
+    "order2e": {
+      "purpose": "Order extension table with many extra fields.",
+      "key_columns": {
+        "ORD_NUM": "Sales order number.",
+        "PO_NUM": "PO number copy.",
+        "PO_DT": "PO date integer."
+      },
+      "write_rule": "Ensure extension row exists; update PO_NUM on edits."
+    },
+    "cus_invt": {
+      "purpose": "Customer product purchase history and customer/product price history.",
+      "key_columns": {
+        "CUS_ID": "Customer id.",
+        "PROD_CD": "Item number.",
+        "PRICE": "Historical/customer price.",
+        "DISCOUNT": "Discount.",
+        "INVS_DT": "Invoice/order date integer.",
+        "INVS_NUM": "Invoice/order number.",
+        "INVS_QTY": "Quantity.",
+        "WHS_NUM": "Warehouse.",
+        "CUS_PROD": "Customer product code."
+      },
+      "usage": "Used for Customer Detail purchase history/search."
+    },
+    "ctrfile2": {
+      "purpose": "Lookup/control table.",
+      "usage": [
+        "Ship via/order type lookup.",
+        "Sales/user-like lookup in older versions. Current frontend sales dropdown is hard-coded."
+      ]
+    },
+    "whs_file": {
+      "purpose": "Warehouse lookup table."
+    }
+  },
+  "barcode_and_item_lookup": {
+    "api": "GET /api/products/lookup/{code}?customerType=<CUS_TYPE>",
+    "input_triggers": [
+      "Scanner sends Enter",
+      "Scanner sends Tab",
+      "Manual Add Item button"
+    ],
+    "candidate_generation": [
+      "raw trimmed input",
+      "input with all whitespace removed",
+      "if numeric: remove leading zeros",
+      "if numeric length >= 12: remove last digit/check digit",
+      "if numeric and starts with 0: remove the first 0",
+      "if numeric starts with 0 and length > 12: remove first 0 and last digit"
+    ],
+    "database_match_order": [
+      "TRIM(inv.PROD_CD) IN candidates",
+      "TRIM(inv.UPC_CD) IN candidates",
+      "TRIM(inv_upc.UPC_CD) IN candidates"
+    ],
+    "on_success": {
+      "existing_line": "Increment quantity by 1 and recalculate extAmount.",
+      "new_line": "Add line with quantity 1, warehouse 1, product description, pack, unit, tax indicator, selected customer price, available W1 quantity."
+    },
+    "on_failure": "Show barcode-not-found/manual-entry prompt."
+  },
+  "pricing": {
+    "driver": "customer.CUS_TYPE",
+    "current_customer_type_map": {
+      "0": [
+        "inv.RETAIL_PRS"
+      ],
+      "1": [
+        "inv.RETAIL_PRS"
+      ],
+      "2": [
+        "inv.CORP_PRS",
+        "inv.RETAIL_PRS"
+      ],
+      "3": [
+        "inv.WHOLE_PRS",
+        "inv.RETAIL_PRS"
+      ],
+      "4": [
+        "inv.WHOLE_PRS2",
+        "inv.WHOLE_PRS",
+        "inv.RETAIL_PRS"
+      ],
+      "5": [
+        "inv.WHOLE_PRS3",
+        "inv.WHOLE_PRS2",
+        "inv.WHOLE_PRS",
+        "inv.RETAIL_PRS"
+      ]
+    },
+    "fallback_order": [
+      "RETAIL_PRS",
+      "WHOLE_PRS",
+      "WHOLE_PRS2",
+      "WHOLE_PRS3",
+      "CORP_PRS"
+    ],
+    "example_known_behavior": "Customer 7186639333 is level/type 4; item 254694 should price at 16.5 instead of level 1 price 17.95."
+  },
+  "customer_ship_to_logic": {
+    "case_1_billing_only": "If customer has no separate shipping fields and no selected chain store, use billing address as ship-to.",
+    "case_2_shipping_address": "If customer has shipping fields, use those as default ship-to.",
+    "case_3_chain_stores": "If chn_str has multiple stores, user selects a store; use selected store name/address/phone and write STORE_NUM.",
+    "example_chain_customer": "6467052368 has multiple chain-store rows.",
+    "example_reference_order": "3003 can be used to compare legacy OMS ship-to/store behavior."
+  },
+  "sales_order_number_assignment": {
+    "min_number_env": "ORDER_SO_MIN_NUMBER",
+    "current_known_minimum": 9438,
+    "rule": "New order stays Draft until Save. On save, search from min number upward for first usable S/O number.",
+    "used_tables_for_collision_check": [
+      "orders",
+      "ord_log",
+      "order2e"
+    ],
+    "note": "Do not require using max(ORD_NUM)+1. Missing/non-contiguous numbers can be reused if required OMS rows are absent."
+  },
+  "write_transaction_rules": {
+    "isolation": "READ COMMITTED",
+    "settings": [
+      "SET XACT_ABORT ON",
+      "SET LOCK_TIMEOUT <ORDER_DB_LOCK_TIMEOUT_MS>",
+      "BEGIN TRANSACTION",
+      "COMMIT or ROLLBACK"
+    ],
+    "locks": [
+      "Use SQL Server application locks for new S/O number assignment.",
+      "Use SQL Server application locks for editing existing order.",
+      "Use UPDLOCK/HOLDLOCK when checking affected order/inventory rows."
+    ],
+    "new_order_write_sequence": [
+      "Validate app write flags and production write acknowledgement.",
+      "Assign first usable S/O number.",
+      "Insert orders header.",
+      "Insert ord_log line rows.",
+      "Adjust inv_data.ORDER_QTY for each line.",
+      "Ensure so_divs row.",
+      "Ensure order2e row.",
+      "Commit transaction."
+    ],
+    "edit_order_write_sequence": [
+      "Validate target order exists.",
+      "Update orders header/totals.",
+      "Load existing ord_log rows.",
+      "For removed lines: reverse inv_data.ORDER_QTY and delete ord_log row.",
+      "For changed lines: adjust inv_data.ORDER_QTY difference and update ord_log.",
+      "For new lines: insert ord_log and add inv_data.ORDER_QTY.",
+      "Update or insert order2e PO_NUM.",
+      "Commit transaction."
+    ],
+    "rollback_rule": "Any failure rolls back all header, line, extension, and inventory-reservation changes."
+  },
+  "read_apis_current_project": {
+    "database_info": "GET /api/db/info",
+    "order_types": "GET /api/lookups/order-types",
+    "sales": "GET /api/lookups/sales",
+    "warehouses": "GET /api/lookups/warehouses",
+    "customer_search": "GET /api/customers/search?q=<text>",
+    "customer_detail": "GET /api/customers/{customer_id}",
+    "customer_stores": "GET /api/customers/{customer_id}/stores",
+    "customer_orders": "GET /api/customers/{customer_id}/orders",
+    "customer_purchases": "GET /api/customers/{customer_id}/purchases?q=<optional>",
+    "product_lookup": "GET /api/products/lookup/{code}?customerType=<optional>",
+    "sales_order_read": "GET /api/oms/orders/{so_number}",
+    "sales_order_preview": "POST /api/orders/preview"
+  },
+  "write_apis_current_project": {
+    "create_sales_order": "POST /api/oms/orders",
+    "update_sales_order": "PUT /api/oms/orders/{so_number}",
+    "server_print_invoice": "POST /api/oms/orders/{so_number}/print/invoice",
+    "server_print_picking_list": "POST /api/oms/orders/{so_number}/print/picking-list"
+  },
+  "important_cautions": [
+    "Do not run write tests against production without explicit flags and current backup/rollback plan.",
+    "Do not assume max(ORD_NUM)+1 is the next order number; search for first usable candidate.",
+    "Do not ignore order2e or so_divs; legacy OMS expects companion rows.",
+    "When changing lines, update inv_data.ORDER_QTY atomically with ord_log changes.",
+    "Trim fixed-width char fields on read; clip values to known field lengths on write.",
+    "Do not commit backend/.env, production snapshots, database backups, or generated PDFs.",
+    "Keep frontend database access indirect through backend APIs."
+  ],
+  "source_files_in_this_project": {
+    "backend_database_helpers": "backend/app/db.py",
+    "backend_api_and_oms_mapping": "backend/app/main.py",
+    "pdf_generation": "backend/app/pdf_reports.py",
+    "server_printing": "backend/app/server_print.py",
+    "desktop_frontend": "frontend/",
+    "ipad_frontend": "frontend-mobile/",
+    "full_schema_inventory": "tables.md"
+  },
+  "last_updated": "2026-06-01"
+}
