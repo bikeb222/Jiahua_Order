@@ -405,5 +405,476 @@
     "ipad_frontend": "frontend-mobile/",
     "full_schema_inventory": "tables.md"
   },
-  "last_updated": "2026-06-01"
+  "last_updated": "2026-06-01",
+  "source_documents_used_for_this_handoff": {
+    "tables_md": {
+      "path": "tables.md",
+      "purpose": "Full schema inventory captured from SQL Server metadata for user tables over 1000 rows.",
+      "generated_at": "2026-04-11 10:48:31",
+      "tables_found": 60,
+      "method": "Read-only metadata queries against sys.tables, sys.schemas, sys.partitions, sys.columns, sys.types, sys.indexes, and related metadata."
+    },
+    "order_table_md": {
+      "path": "order_table.md",
+      "purpose": "Curated implementation notes for the current web OMS order-entry flow.",
+      "updated_at": "2026-05-29"
+    }
+  },
+  "schema_inventory_summary": {
+    "scope": "User tables in dbo schema with metadata row count greater than 1000, from tables.md.",
+    "row_count_source": "sys.partitions heap/clustered index metadata, not COUNT(*) over business data.",
+    "large_tables_relevant_to_order_entry": [
+      {
+        "table": "dbo.cus_invt",
+        "rows_at_capture": 1426317,
+        "columns": 9,
+        "primary_key": null,
+        "order_entry_role": "customer purchase/product history"
+      },
+      {
+        "table": "dbo.ord_log",
+        "rows_at_capture": 822247,
+        "columns": 39,
+        "primary_key": "Id",
+        "order_entry_role": "sales order lines"
+      },
+      {
+        "table": "dbo.so_divs",
+        "rows_at_capture": 200463,
+        "columns": 18,
+        "primary_key": "Id",
+        "order_entry_role": "sales order division/accounting companion row"
+      },
+      {
+        "table": "dbo.order2e",
+        "rows_at_capture": 91674,
+        "columns": 216,
+        "primary_key": null,
+        "order_entry_role": "sales order extension row"
+      },
+      {
+        "table": "dbo.orders",
+        "rows_at_capture": 68624,
+        "columns": 109,
+        "primary_key": "Id",
+        "order_entry_role": "sales order header"
+      },
+      {
+        "table": "dbo.inv_upc",
+        "rows_at_capture": 23245,
+        "columns": 4,
+        "primary_key": null,
+        "order_entry_role": "alternate UPC/barcode lookup"
+      },
+      {
+        "table": "dbo.inv_data",
+        "rows_at_capture": 20080,
+        "columns": 61,
+        "primary_key": "Id",
+        "order_entry_role": "inventory by product/warehouse"
+      },
+      {
+        "table": "dbo.cus_divs",
+        "rows_at_capture": 17201,
+        "columns": 18,
+        "primary_key": "Id",
+        "order_entry_role": "customer default division/accounting reference"
+      },
+      {
+        "table": "dbo.customer",
+        "rows_at_capture": 17130,
+        "columns": 93,
+        "primary_key": "Id",
+        "order_entry_role": "customer master"
+      },
+      {
+        "table": "dbo.inv",
+        "rows_at_capture": 16547,
+        "columns": 137,
+        "primary_key": "Id",
+        "order_entry_role": "product master"
+      }
+    ],
+    "important_non_order_tables_seen": [
+      {
+        "table": "dbo.invt_log",
+        "rows_at_capture": 2129307,
+        "role": "inventory log/history; not part of the currently verified web order write surface"
+      },
+      {
+        "table": "dbo.sys_log",
+        "rows_at_capture": 1429169,
+        "role": "system log/history; not part of the currently verified web order write surface"
+      },
+      {
+        "table": "dbo.invoice",
+        "rows_at_capture": 214212,
+        "role": "invoice header; current web order flow prints CSO/Pick List but does not create invoice rows"
+      },
+      {
+        "table": "dbo.prt_log",
+        "rows_at_capture": 619188,
+        "role": "legacy print log; current server printing does not currently write this table"
+      }
+    ]
+  },
+  "order_entry_surface_from_order_table_md": {
+    "core_write_tables": [
+      {
+        "table": "dbo.orders",
+        "role": "Order header",
+        "current_use": "Create/update S/O header, customer, addresses, dates, totals, sales, ship via, terms, PO/ref, store/ship-to fields."
+      },
+      {
+        "table": "dbo.ord_log",
+        "role": "Order lines",
+        "current_use": "Rewrite line items for an order: item number, quantity, unit, price, pack, warehouse, ship date, line amount."
+      },
+      {
+        "table": "dbo.so_divs",
+        "role": "Division/accounting row",
+        "current_use": "Maintain the sales-order division row expected by OMS."
+      },
+      {
+        "table": "dbo.order2e",
+        "role": "Extension row",
+        "current_use": "Maintain order extension row; current project uses it mainly for ORD_NUM and PO_NUM/PO_DT compatibility."
+      },
+      {
+        "table": "dbo.inv_data",
+        "role": "Inventory reservation",
+        "current_use": "Adjust ORDER_QTY together with ord_log inserts/updates/deletes."
+      }
+    ],
+    "core_read_tables": [
+      {
+        "table": "dbo.customer",
+        "role": "Customer master",
+        "current_use": "Bill To, default Ship To, terms, sales, phone, email, tax rate, and customer type."
+      },
+      {
+        "table": "dbo.chn_str",
+        "role": "Chain stores",
+        "current_use": "Store/List selection and selected ship-to store for chain-store customers."
+      },
+      {
+        "table": "dbo.inv",
+        "role": "Product master",
+        "current_use": "Item lookup, description, unit, pack, price, UPC fallback."
+      },
+      {
+        "table": "dbo.inv_upc",
+        "role": "Alternate UPCs",
+        "current_use": "Additional barcode lookup support."
+      },
+      {
+        "table": "dbo.inv_data",
+        "role": "Inventory by warehouse",
+        "current_use": "Availability, W1/W2/W6 stock, warehouse location, and current reservation quantity."
+      },
+      {
+        "table": "dbo.ctrfile2",
+        "role": "Ship via lookup",
+        "current_use": "Ship-via choices and code/description mapping."
+      },
+      {
+        "table": "dbo.ctrfilep / dbo.ctrfilet",
+        "role": "Terms lookup",
+        "current_use": "Payment terms, term days, COD flag."
+      },
+      {
+        "table": "dbo.cus_invt",
+        "role": "Customer purchase history",
+        "current_use": "Customer Detail purchase history and search by item/description/SO."
+      }
+    ],
+    "confirmed_order_number_policy": {
+      "lower_bound": 9438,
+      "assignment_time": "Only on Save; UI displays Draft before save.",
+      "search_strategy": "Search first usable number at or above lower bound, not max(ORD_NUM)+1.",
+      "reuse_missing_numbers": true,
+      "conflict_tables": [
+        "dbo.orders",
+        "dbo.ord_log",
+        "dbo.order2e"
+      ],
+      "leftover_trace_policy": "Small leftover traces outside the verified write surface are not by themselves enough to skip a candidate number."
+    }
+  },
+  "field_type_reference_from_tables_md": {
+    "orders": {
+      "row_count_at_capture": 68624,
+      "columns": 109,
+      "primary_key": "Id",
+      "important_columns_with_types": {
+        "ORD_NUM": "int NOT NULL",
+        "CUS_ID": "char(11) NOT NULL",
+        "ORD_DT": "int NULL",
+        "ORD_AMT": "decimal(21,6) NULL",
+        "PAID_AMT": "decimal(21,6) NULL",
+        "INVS_TAX": "decimal(21,6) NULL",
+        "TAX_RATE": "decimal(21,6) NULL",
+        "HANDL_FEE": "decimal(21,6) NULL",
+        "DISCOUNT": "decimal(21,6) NULL",
+        "SALES_NUM": "char(4) NULL",
+        "ORD_TIME": "decimal(8,0) NULL",
+        "PO_NUM": "char(100) NULL",
+        "SHIP_DT": "decimal(8,0) NULL",
+        "TERM_DESC": "char(15) NULL",
+        "TERMS_DAY": "decimal(5,0) NULL",
+        "TERMS_COD": "char(1) NULL",
+        "SP_ADR": "char(60) NULL",
+        "SP_ADR_2": "char(60) NULL",
+        "SP_ADR_22": "char(60) NULL",
+        "SP_ADR_3": "char(60) NULL",
+        "SP_ADR_CT": "char(35) NULL",
+        "SP_ADR_ST": "char(15) NULL",
+        "SP_ADR_ZP": "char(15) NULL",
+        "ATTN": "char(30) NULL",
+        "SHIP_DESC": "char(15) NULL",
+        "WHS_NUM": "char(6) NULL",
+        "REF_NUM": "char(20) NULL",
+        "ORD_BY": "char(15) NULL",
+        "STORE_NUM": "char(12) NULL",
+        "TAXABLE_AMT": "decimal(21,6) NULL",
+        "COD_DESC": "char(1) NULL",
+        "EMAIL_ADR": "char(60) NULL",
+        "ORDER_BY": "char(10) NULL",
+        "DISC_AMT": "decimal(21,6) NULL",
+        "UPDT_BY": "char(10) NULL",
+        "UPDT_DT": "decimal(8,0) NULL",
+        "SP_CUS_NM": "char(60) NULL",
+        "SOLD_TO": "char(50) NULL",
+        "STATUS": "char(20) NULL",
+        "CUS_SHIP_TEL2": "varchar(19) NULL",
+        "REF_NUM2": "varchar(20) NULL",
+        "DELIVERY_DT": "int NULL"
+      },
+      "notes": [
+        "PO_NUM is char(100) in orders, but order2e.PO_NUM is varchar(22); clip appropriately when copying into order2e.",
+        "Shipping address fields in orders are SP_ADR*, not customer SHP_* fields.",
+        "Current iPad-origin web orders intentionally write SOLD_TO = Order by IPad and leave SP_CUS_NM blank."
+      ]
+    },
+    "ord_log": {
+      "row_count_at_capture": 822247,
+      "columns": 39,
+      "primary_key": "Id",
+      "important_columns_with_types": {
+        "OLG_DT": "int NULL",
+        "OLG_TIME": "decimal(8,0) NULL",
+        "ORD_NUM": "decimal(8,0) NULL",
+        "CUS_ID": "char(11) NULL",
+        "DISCOUNT": "decimal(21,6) NULL",
+        "INVS_NUM": "decimal(8,0) NULL",
+        "PROD_CD": "char(21) NULL",
+        "ORDER_QTY": "decimal(21,6) NULL",
+        "CAN_QTY": "decimal(21,6) NULL",
+        "UNIT_PRS": "decimal(21,6) NULL",
+        "COMM_LN": "decimal(8,0) NULL",
+        "COMM_RT": "decimal(21,6) NULL",
+        "INVS_QTY": "decimal(21,6) NULL",
+        "PCK_QTY": "decimal(21,6) NULL",
+        "SHIP_DT": "int NULL",
+        "NT_NUM": "decimal(8,0) NULL",
+        "UT_DESC": "char(60) NULL",
+        "WHS_NUM": "char(6) NULL",
+        "TAX_IND": "char(1) NULL",
+        "LOG_COST": "decimal(21,6) NULL",
+        "SALE_COST": "decimal(21,6) NULL",
+        "DISC_LINE": "decimal(21,6) NULL",
+        "PC_UNIT": "decimal(21,6) NULL",
+        "DEF_UT": "char(2) NULL",
+        "REF_NUM": "char(12) NULL",
+        "BO_QTY": "decimal(8,0) NULL",
+        "Id": "int identity primary key"
+      },
+      "notes": [
+        "ORD_NUM is decimal(8,0), so cast to int in application code when needed.",
+        "NT_NUM/COMM_LN act like line numbers/sequences in current order flow.",
+        "ORDER_QTY is the order quantity used for reservation math; INVS_QTY is shipped/invoiced quantity."
+      ]
+    },
+    "so_divs": {
+      "row_count_at_capture": 200463,
+      "columns": 18,
+      "primary_key": "Id",
+      "important_columns_with_types": {
+        "ORD_NUM": "int NOT NULL",
+        "TYPE_CD": "int NOT NULL",
+        "INVS_CD": "int NULL",
+        "DIV_CD": "char(10) NULL",
+        "PRJ_CD": "char(10) NULL",
+        "JOB_CD": "char(10) NULL",
+        "DEPT_CD": "char(10) NULL",
+        "CLASS_CD": "char(20) NULL",
+        "REG_CD": "char(10) NULL",
+        "GL_ACT": "char(25) NULL",
+        "CHT_NUM": "int NULL",
+        "Id": "int identity primary key"
+      },
+      "notes": [
+        "Use customer division defaults from cus_divs when possible; otherwise insert the minimal OMS-compatible row used by this project."
+      ]
+    },
+    "order2e": {
+      "row_count_at_capture": 91674,
+      "columns": 216,
+      "primary_key": null,
+      "important_columns_with_types": {
+        "ORD_NUM": "int NOT NULL",
+        "PO_NUM": "varchar(22) NULL",
+        "PO_DT": "int NULL"
+      },
+      "notes": [
+        "Table has many RSV_* extension fields; current project only depends on ORD_NUM, PO_NUM, PO_DT.",
+        "Candidate S/O number checks include order2e because legacy OMS may leave extension traces."
+      ]
+    },
+    "inv": {
+      "row_count_at_capture": 16547,
+      "columns": 137,
+      "primary_key": "Id",
+      "important_columns_with_types": {
+        "PROD_CD": "char(21) NOT NULL",
+        "DESCRIP": "char(61) NULL",
+        "DESCRIP1": "char(60) NULL",
+        "DESCRIP2": "char(60) NULL",
+        "UNIT_NM": "char(4) NULL",
+        "RETAIL_PRS": "decimal(21,6) NULL",
+        "WHOLE_PRS": "decimal(21,6) NULL",
+        "WHOLE_PRS2": "decimal(21,6) NULL",
+        "WHOLE_PRS3": "decimal(21,6) NULL",
+        "CORP_PRS": "decimal(21,6) NULL",
+        "PRICE_1": "decimal(21,6) NULL",
+        "PRICE_2": "decimal(21,6) NULL",
+        "PRICE_3": "decimal(21,6) NULL",
+        "PRICE_4": "decimal(21,6) NULL",
+        "PRICE_5": "decimal(21,6) NULL",
+        "PRICE_6": "decimal(21,6) NULL",
+        "PC_CASE": "decimal(21,6) NULL",
+        "BOX_CASE": "decimal(21,6) NULL",
+        "TAX_IND": "char(1) NULL",
+        "UPC_CD": "char(14) NULL",
+        "CLASS_CD": "char(30) NULL",
+        "CASE_WT": "decimal(21,6) NULL",
+        "UT_WT": "decimal(21,6) NULL",
+        "UNIT_COLOR": "char(10) NULL",
+        "DEF_UNIT": "char(2) NULL",
+        "IMAGE_NM": "char(200) NULL",
+        "STATUS": "char(10) NULL"
+      },
+      "notes": [
+        "Product Detail uses inv image and price fields plus inv_data inventory."
+      ]
+    },
+    "inv_upc": {
+      "row_count_at_capture": 23245,
+      "columns": 4,
+      "primary_key": null,
+      "important_columns_with_types": {
+        "PROD_CD": "char(21) NOT NULL",
+        "UPC_CD": "char(20) NOT NULL",
+        "UPC_TYPE": "char(10) NULL",
+        "SEQ_NUM": "int NULL"
+      }
+    },
+    "inv_data": {
+      "row_count_at_capture": 20080,
+      "columns": 61,
+      "primary_key": "Id",
+      "important_columns_with_types": {
+        "PROD_CD": "char(21) NOT NULL",
+        "WHS_NUM": "char(8) NOT NULL",
+        "IN_STOCK": "decimal(21,6) NULL",
+        "BACK_QTY": "decimal(21,6) NULL",
+        "ORDER_QTY": "decimal(21,6) NULL",
+        "ON_ORDER_QTY": "decimal(21,6) NULL",
+        "INV_LOC": "char(20) NULL",
+        "UNIT_COLOR": "char(11) NULL",
+        "CLASS_CD": "char(20) NULL",
+        "DESCRIP": "char(61) NULL",
+        "DEF_UNIT": "char(2) NULL",
+        "IMAGE_NM": "char(80) NULL",
+        "UPC_NUM": "char(20) NULL",
+        "UPC_CD": "char(30) NULL",
+        "Id": "int identity primary key",
+        "BASELINE_QTY": "decimal(21,6) NULL default 0",
+        "BASELINE_DT": "int NULL default 0"
+      },
+      "reservation_formula": "availableQty = IN_STOCK - ORDER_QTY",
+      "write_warning": "Always adjust ORDER_QTY inside the same transaction as ord_log changes."
+    },
+    "customer": {
+      "row_count_at_capture": 17130,
+      "columns": 93,
+      "primary_key": "Id",
+      "important_columns_with_types": {
+        "CUS_NM": "char(41) NULL",
+        "CUS_TYPE": "tinyint NULL",
+        "CUS_ID": "char(11) NOT NULL",
+        "ADDRESS": "char(60) NULL",
+        "ADDRESS2": "char(60) NULL",
+        "CITY": "char(40) NULL",
+        "STATE": "char(20) NULL",
+        "ZIP": "char(16) NULL",
+        "PHONE": "char(25) NULL",
+        "ATTN": "char(30) NULL",
+        "SALES_NUM": "char(5) NULL",
+        "TERM": "tinyint NULL",
+        "TAX_RATE": "decimal(21,6) NULL",
+        "SHP_ADDRESS": "char(60) NULL",
+        "SHP_ADDRESS2": "char(60) NULL",
+        "SHP_CITY": "char(40) NULL",
+        "SHP_STATE": "char(20) NULL",
+        "SHP_ZIP": "char(15) NULL",
+        "EMAIL_ADR": "char(240) NULL",
+        "DISCOUNT": "decimal(21,6) NULL",
+        "TERMS_DAY": "decimal(5,0) NULL",
+        "TERMS_COD": "char(1) NULL",
+        "TERM_DESC": "char(15) NULL",
+        "SHIP_DESC": "char(15) NULL",
+        "SHP_CUS_NM": "char(60) NULL",
+        "SHP_PHONE": "char(25) NULL",
+        "SHP_EMAIL_ADR": "char(80) NULL",
+        "SERVICE_CODE": "char(20) NULL"
+      },
+      "notes": [
+        "Use CUS_TYPE to drive item price level.",
+        "Use SHP_* fields only if present; otherwise bill-to becomes ship-to unless a chain store is selected."
+      ]
+    },
+    "cus_divs": {
+      "row_count_at_capture": 17201,
+      "columns": 18,
+      "primary_key": "Id",
+      "important_columns_with_types": {
+        "CUS_ID": "char(10) NOT NULL",
+        "TYPE_CD": "int NOT NULL",
+        "DIV_CD": "char(10) NULL",
+        "DEPT_CD": "char(10) NULL",
+        "GL_ACT": "char(25) NULL",
+        "Id": "int identity primary key"
+      },
+      "notes": [
+        "Customer default division/accounting data can inform so_divs rows for sales orders."
+      ]
+    }
+  },
+  "verified_vs_watch_areas": {
+    "verified_for_current_web_order_flow": [
+      "Customer lookup and ship-to selection for billing-only, separate shipping, and chain-store customers.",
+      "Barcode lookup through inv.PROD_CD, inv.UPC_CD, and inv_upc.UPC_CD with normalized variants.",
+      "Customer-type-based price selection for scanned items.",
+      "New order save using transaction and first usable S/O candidate.",
+      "Edit order update using transaction, ord_log rewrite/update, and inv_data.ORDER_QTY adjustment.",
+      "CSO and picking list generation/printing through server-side print service."
+    ],
+    "watch_areas_from_order_table_md": [
+      "Inventory reservation side effects outside current inv_data.ORDER_QTY behavior still require caution.",
+      "Legacy print/log side effects such as prt_log are not currently written by the web app.",
+      "Rare commission, approval, tax, freight, payment, delivery, EDI, and cancellation workflows should be verified with snapshots before expanding writes.",
+      "invoice/ins_data/invt_log side effects are not part of the current sales-order save surface."
+    ]
+  }
 }
