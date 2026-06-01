@@ -1,5 +1,25 @@
 {
   "name": "Jia Hua OMS Database Knowledge",
+  "production_safety_notice": {
+    "environment": "This knowledge file describes the real Jia Hua OMS production database and related local test database behavior.",
+    "write_policy": [
+      "Treat production OMS as live business data. Orders may be created or edited by real users at the same time.",
+      "If a field is not positively identified and verified, do not write to it.",
+      "Before adding or changing any write logic, compare against the real OMS behavior and confirm the target tables, fields, required side effects, and transaction boundaries.",
+      "Use transactions for multi-table order writes so partial orders are not left behind.",
+      "Prefer read-only investigation until the exact write path is understood."
+    ],
+    "strictly_forbidden": [
+      "Do not drop databases.",
+      "Do not drop tables.",
+      "Do not alter table schemas.",
+      "Do not truncate tables.",
+      "Do not bulk delete production rows.",
+      "Do not run destructive cleanup scripts against production.",
+      "Do not guess-write unknown fields just to make a save succeed."
+    ],
+    "required_attitude": "Be conservative. This is a production system; correctness is more important than speed."
+  },
   "database": {
     "engine": "Microsoft SQL Server",
     "production_database": "omsdata",
