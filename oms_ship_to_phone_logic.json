@@ -1,0 +1,193 @@
+{
+  "name": "OMS Ship-To Address And Phone Lookup Logic",
+  "version": "2026-06-02",
+  "purpose": "Reusable rules for another project to look up a sales order's Ship To Address and the corresponding phone number by S/O number.",
+  "production_safety_notice": {
+    "environment": "This describes the real Jia Hua OMS production schema behavior.",
+    "read_only_use": true,
+    "do_not_write_from_this_file": true,
+    "warning": "Use this file for SELECT/read logic. Do not use it to guess-write unknown fields. Do not alter/drop/truncate production tables."
+  },
+  "primary_tables": {
+    "orders": {
+      "role": "Sales order header. This is the first source for the actual ship-to address saved on an order.",
+      "key": "ORD_NUM",
+      "important_fields": {
+        "ORD_NUM": "S/O number.",
+        "CUS_ID": "Customer id.",
+        "SP_SM_ADR": "Legacy OMS ship-to source flag.",
+        "STORE_NUM": "Selected chain-store number, when a chain store was selected.",
+        "SP_ADR": "Saved ship-to name.",
+        "SP_ADR_2": "Saved ship-to address line 1.",
+        "SP_ADR_22": "Saved ship-to address line 2; often blank.",
+        "SP_ADR_3": "Saved combined city/state/zip text.",
+        "SP_ADR_CT": "Saved ship-to city.",
+        "SP_ADR_ST": "Saved ship-to state.",
+        "SP_ADR_ZP": "Saved ship-to zip.",
+        "ATTN": "Attention/contact text.",
+        "CUS_SHIP_CHG": "Despite the name, legacy OMS uses this decimal field to store the numeric phone printed for the ship-to/order after reopening an order.",
+        "CUS_SHIP_TEL2": "Web app compatibility phone field. Legacy OMS historical orders are usually NULL here."
+      }
+    },
+    "customer": {
+      "role": "Customer master. Used for fallback bill-to/default ship-to information and phone.",
+      "key": "CUS_ID",
+      "important_fields": {
+        "CUS_NM": "Billing/default customer name.",
+        "ADDRESS": "Billing address line 1.",
+        "ADDRESS2": "Billing address line 2.",
+        "CITY": "Billing city.",
+        "STATE": "Billing state.",
+        "ZIP": "Billing zip.",
+        "PHONE": "Primary customer phone.",
+        "PHONE_2": "Customer fax/secondary phone depending on OMS usage.",
+        "ATTN": "Customer attention/contact.",
+        "SHP_CUS_NM": "Default shipping name, if separate shipping exists.",
+        "SHP_ADDRESS": "Default shipping address line 1.",
+        "SHP_ADDRESS2": "Default shipping address line 2.",
+        "SHP_CITY": "Default shipping city.",
+        "SHP_STATE": "Default shipping state.",
+        "SHP_ZIP": "Default shipping zip.",
+        "SHP_PHONE": "Default shipping phone, if filled."
+      }
+    },
+    "chn_str": {
+      "role": "Chain-store / multi-store ship-to list.",
+      "keys": ["CUS_ID", "STR_NUM"],
+      "important_fields": {
+        "CUS_ID": "Parent customer id.",
+        "STR_NUM": "Store number. Matches orders.STORE_NUM.",
+        "CUS_NM": "Store ship-to name.",
+        "ADDRESS": "Store address line 1.",
+        "ADDRESS2": "Store address line 2.",
+        "CITY": "Store city.",
+        "STATE": "Store state.",
+        "ZIP": "Store zip.",
+        "PHONE": "Store phone. Can be blank for some stores.",
+        "ATTN": "Store attention/contact, if filled."
+      }
+    }
+  },
+  "sp_sm_adr_meaning": {
+    "S": {
+      "meaning": "Selected chain-store ship-to.",
+      "expected_related_field": "orders.STORE_NUM should normally point to chn_str.STR_NUM.",
+      "write_rule_used_by_web_app": "Use S only when STORE_NUM is present."
+    },
+    "N": {
+      "meaning": "Customer has separate SHP_* default shipping fields and no chain store was selected.",
+      "example": "Customer 7186639333 has SHP_ADDRESS=TEST2. Legacy OMS order 11469 uses SP_SM_ADR=N."
+    },
+    "Y": {
+      "meaning": "Normal billing/default ship-to order, usually no separate customer SHP_* fields and no selected store.",
+      "common_case": "Most single-address customers without chain stores use Y."
+    },
+    "important_bug_note": "Do not set SP_SM_ADR=S just because the order has non-empty SP_ADR/SP_ADR_2. That can make legacy OMS reopen/print use the wrong path and show phone as 0000000000."
+  },
+  "address_lookup_algorithm_by_so_number": [
+    "1. SELECT the order row from dbo.orders by ORD_NUM.",
+    "2. LEFT JOIN dbo.customer on customer.CUS_ID = orders.CUS_ID.",
+    "3. If orders.STORE_NUM is non-empty, LEFT JOIN dbo.chn_str on CUS_ID and STR_NUM.",
+    "4. For the actual saved order address, prefer orders.SP_ADR, SP_ADR_2, SP_ADR_22, SP_ADR_CT, SP_ADR_ST, SP_ADR_ZP, and SP_ADR_3.",
+    "5. If the order SP_ADR fields are missing and STORE_NUM exists, fall back to the matching chn_str store row.",
+    "6. If no store row applies and customer SHP_* fields exist, fall back to customer.SHP_* fields.",
+    "7. Otherwise fall back to customer billing fields CUS_NM, ADDRESS, ADDRESS2, CITY, STATE, ZIP."
+  ],
+  "phone_lookup_algorithm_by_so_number": {
+    "for_matching_legacy_oms_print": [
+      "1. Prefer orders.CUS_SHIP_CHG when it is non-null and not zero. Convert decimal digits to a phone string.",
+      "2. If CUS_SHIP_CHG is zero/blank and orders.CUS_SHIP_TEL2 is non-empty, use CUS_SHIP_TEL2. This catches web-created orders before/around the compatibility fix.",
+      "3. If STORE_NUM is present and the matching chn_str.PHONE is non-empty, use chn_str.PHONE.",
+      "4. If customer.SHP_PHONE is non-empty, use customer.SHP_PHONE.",
+      "5. Fall back to customer.PHONE.",
+      "6. If all sources are blank, report blank/unknown instead of inventing 0000000000."
+    ],
+    "why_cus_ship_chg_first": "Legacy OMS orders usually leave CUS_SHIP_TEL2 NULL. The phone that legacy OMS prints after reopening an order is represented by the numeric digits in orders.CUS_SHIP_CHG.",
+    "formatting_rule": "Strip non-digits. If 10 digits, display as (AAA) BBB-CCCC when needed. Keep raw digits for database comparisons."
+  },
+  "recommended_select_shape": {
+    "description": "SQL Server query shape for one S/O. Keep this read-only.",
+    "sql": [
+      "SELECT TOP 1",
+      "  o.ORD_NUM,",
+      "  o.CUS_ID,",
+      "  o.SP_SM_ADR,",
+      "  o.STORE_NUM,",
+      "  o.SP_ADR, o.SP_ADR_2, o.SP_ADR_22, o.SP_ADR_3,",
+      "  o.SP_ADR_CT, o.SP_ADR_ST, o.SP_ADR_ZP,",
+      "  o.ATTN,",
+      "  o.CUS_SHIP_CHG,",
+      "  o.CUS_SHIP_TEL2,",
+      "  c.CUS_NM, c.ADDRESS, c.ADDRESS2, c.CITY, c.STATE, c.ZIP,",
+      "  c.PHONE AS customerPhone,",
+      "  c.SHP_CUS_NM, c.SHP_ADDRESS, c.SHP_ADDRESS2, c.SHP_CITY, c.SHP_STATE, c.SHP_ZIP, c.SHP_PHONE,",
+      "  s.STR_NUM, s.CUS_NM AS storeName, s.ADDRESS AS storeAddress, s.ADDRESS2 AS storeAddress2,",
+      "  s.CITY AS storeCity, s.STATE AS storeState, s.ZIP AS storeZip, s.PHONE AS storePhone",
+      "FROM dbo.orders AS o",
+      "LEFT JOIN dbo.customer AS c ON c.CUS_ID = o.CUS_ID",
+      "LEFT JOIN dbo.chn_str AS s",
+      "  ON s.CUS_ID = o.CUS_ID",
+      " AND LTRIM(RTRIM(s.STR_NUM)) = LTRIM(RTRIM(o.STORE_NUM))",
+      "WHERE o.ORD_NUM = ?"
+    ]
+  },
+  "phone_conversion_sql_snippet": {
+    "description": "Convert orders.CUS_SHIP_CHG decimal digits into a varchar phone candidate.",
+    "sql": "NULLIF(CONVERT(varchar(19), CONVERT(decimal(21,0), ISNULL(o.CUS_SHIP_CHG, 0))), '0')"
+  },
+  "verified_examples": {
+    "10617": {
+      "source": "iPad/web-created before final compatibility fix",
+      "customerId": "7186639333",
+      "observed_problem": "Web print showed phone, but reopening/printing in legacy OMS showed 0000000000.",
+      "important_fields_seen": {
+        "SP_SM_ADR": "S",
+        "STORE_NUM": "",
+        "CUS_SHIP_CHG": 0,
+        "CUS_SHIP_TEL2": "7186639333"
+      },
+      "lesson": "SP_SM_ADR=S was wrong for this non-store customer, and CUS_SHIP_CHG was missing."
+    },
+    "11469": {
+      "source": "Legacy OMS-created order for same customer as 10617",
+      "customerId": "7186639333",
+      "important_fields_seen": {
+        "SP_SM_ADR": "N",
+        "STORE_NUM": "",
+        "CUS_SHIP_CHG": 7186639333,
+        "CUS_SHIP_TEL2": null
+      },
+      "lesson": "For customer with default SHP_* shipping fields and no selected store, legacy OMS uses SP_SM_ADR=N and stores printed phone digits in CUS_SHIP_CHG."
+    },
+    "customer_3475251935": {
+      "description": "Multi-store customer DML DOLLAR CENTRAL INC.",
+      "customerPhone": "3475251935",
+      "chainStores": [
+        {
+          "STR_NUM": "2",
+          "name": "PASSAIC DOLLAR CENTRAL INC",
+          "phone": "3475251935",
+          "address": "34 BARBOUR AVE, PASSAIC, NJ 07055"
+        },
+        {
+          "STR_NUM": "3",
+          "name": "KEARNY DOLLAR CENTRAL INC",
+          "phone": "",
+          "address": "276 KEARNY AVE, KEARNY, NJ 07032"
+        }
+      ],
+      "lessons": [
+        "Orders selecting a store normally use SP_SM_ADR=S and STORE_NUM matching chn_str.STR_NUM.",
+        "Store phone may be blank. In historical OMS orders, CUS_SHIP_CHG can be 0 when the selected store has no phone.",
+        "For extracting a corresponding phone, use CUS_SHIP_CHG first when nonzero, then store/customer fallback depending on the desired display behavior."
+      ]
+    }
+  },
+  "implementation_notes": [
+    "For a saved order, the orders.SP_ADR* fields are the most faithful address source because they represent what was saved at order time.",
+    "For matching legacy OMS print behavior, do not ignore CUS_SHIP_CHG even though its name sounds like a charge amount.",
+    "For web/display robustness, CUS_SHIP_TEL2 can be used as fallback because some web-created orders may have that field populated while CUS_SHIP_CHG is zero.",
+    "If your project only reads data, do not update SP_SM_ADR, CUS_SHIP_CHG, or CUS_SHIP_TEL2.",
+    "If another project writes orders, use the SP_SM_ADR write rule above and write CUS_SHIP_CHG with the chosen phone digits inside the same transaction as the order header."
+  ]
+}
