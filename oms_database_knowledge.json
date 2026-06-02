@@ -189,6 +189,8 @@
         "DISC_AMT": "Discount amount.",
         "DISCOUNT": "Discount percent.",
         "HANDL_FEE": "Handling fee.",
+        "CUS_SHIP_CHG": "Despite the name, legacy OMS writes an order/customer phone number here as decimal digits; web-created orders need this populated for legacy OMS reopen/print compatibility.",
+        "CUS_SHIP_TEL2": "Web app also writes the phone here for web-side compatibility, but legacy OMS historical orders usually leave this NULL.",
         "PO_NUM": "Customer PO number.",
         "REF_NUM": "Reference number.",
         "SALES_NUM": "Sales person.",
@@ -198,7 +200,8 @@
         "SP_CUS_NM": "Current web app leaves blank for new iPad-origin orders.",
         "COD_DESC": "COD flag/description."
       },
-      "read_rule": "Order header is read from orders and joined to customer for display fallback fields."
+      "read_rule": "Order header is read from orders and joined to customer for display fallback fields.",
+      "legacy_phone_write_rule": "Verified by comparing iPad order 10218 with older legacy OMS orders for customer 7186877805: legacy OMS populates orders.CUS_SHIP_CHG with the phone digits while CUS_SHIP_TEL2 is usually NULL. Keep writing CUS_SHIP_TEL2 for web compatibility, but also write CUS_SHIP_CHG so the legacy OMS can reopen/print web-created orders with the phone present. Do not assume CUS_SHIP_CHG is always the selected ship-to phone when billing and ship-to differ; verify those cases separately."
     },
     "ord_log": {
       "purpose": "Sales order line items.",

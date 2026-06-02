@@ -159,6 +159,19 @@ def clean_code(value: str | None, fallback: str = "") -> str:
     return text
 
 
+def oms_legacy_order_phone_value(phone: str | None, fallback_customer_id: str | None = None) -> Decimal:
+    def digits_only(value: str | None) -> str:
+        return "".join(ch for ch in clean_code(value) if ch.isdigit())
+
+    digits = digits_only(phone)
+    if len(digits) < 7:
+        fallback_digits = digits_only(fallback_customer_id)
+        digits = fallback_digits if len(fallback_digits) >= 7 else ""
+    if not digits:
+        return Decimal("0")
+    return Decimal(digits[:15])
+
+
 def lookup_code_variants(value: str | None) -> list[str]:
     raw = clean_code(value)
     if not raw:
@@ -1042,12 +1055,18 @@ def get_local_oms_order(so_number: int) -> dict:
             o.ORD_NUM AS soNumber,
             o.CUS_ID AS customerId,
             c.CUS_NM AS customerName,
-            COALESCE(NULLIF(LTRIM(RTRIM(c.PHONE)), ''), o.CUS_SHIP_TEL2, '') AS phone,
+            COALESCE(
+                NULLIF(LTRIM(RTRIM(c.PHONE)), ''),
+                NULLIF(CONVERT(varchar(19), CONVERT(decimal(21,0), ISNULL(o.CUS_SHIP_CHG, 0))), '0'),
+                NULLIF(LTRIM(RTRIM(o.CUS_SHIP_TEL2)), ''),
+                ''
+            ) AS phone,
             c.PHONE AS billPhone,
             c.PHONE_2 AS billFax,
             c.SHP_PHONE AS shipPhone,
             c.SHP_PHONE_2 AS shipFax,
             o.CUS_SHIP_TEL2 AS orderShipPhone,
+            o.CUS_SHIP_CHG AS legacyOrderPhone,
             o.ORD_DT AS orderDateRaw,
             o.SHIP_DT AS shipDateRaw,
             o.SHIP_DESC AS shipVia,
@@ -1206,6 +1225,7 @@ def save_local_oms_order(payload: DraftSaveRequest) -> dict:
     discount_amount = subtotal * discount_rate / Decimal("100")
     merchandise_total = subtotal - discount_amount
     user_code = clean_code(payload.header.salesOne, "WEB")[:10]
+    legacy_order_phone_number = oms_legacy_order_phone_value(payload.header.phone, customer_id)
     ship_desc = clean_code(payload.header.shipVia)
     store_number = clean_code(payload.header.storeNumber)[:12]
     ship_city_state_zip = format_city_state_zip(
@@ -1248,7 +1268,7 @@ def save_local_oms_order(payload: DraftSaveRequest) -> dict:
             0, 0, "", "", 0, 0,
             0, 0, 0, "", clean_code(payload.header.shipState)[:40], "",
             0, 0, 0, clean_code(payload.header.email)[:60], "", clean_code(payload.header.termsCod)[:1],
-            "", user_code, 0, 0, user_code, order_date,
+            "", user_code, legacy_order_phone_number, 0, user_code, order_date,
             "", "", "", WEB_ORDER_SOLD_TO, "", 0,
             0, 0, 0, clean_code(payload.header.phone)[:19], clean_code(payload.header.refNumber)[:20], 0,
         ]
@@ -1408,6 +1428,7 @@ def update_local_oms_order(so_number: int, payload: DraftSaveRequest) -> dict:
     discount_amount = subtotal * discount_rate / Decimal("100")
     merchandise_total = subtotal - discount_amount
     user_code = clean_code(payload.header.salesOne, "WEB")[:10]
+    legacy_order_phone_number = oms_legacy_order_phone_value(payload.header.phone, customer_id)
     ship_desc = clean_code(payload.header.shipVia)
     store_number = clean_code(payload.header.storeNumber)[:12]
     ship_city_state_zip = format_city_state_zip(
@@ -1495,6 +1516,7 @@ def update_local_oms_order(so_number: int, payload: DraftSaveRequest) -> dict:
                 EMAIL_ADR = ?,
                 COD_CASH = ?,
                 ORDER_BY = ?,
+                CUS_SHIP_CHG = ?,
                 DISC_AMT = ?,
                 UPDT_BY = ?,
                 UPDT_DT = ?,
@@ -1538,6 +1560,7 @@ def update_local_oms_order(so_number: int, payload: DraftSaveRequest) -> dict:
                 clean_code(payload.header.email)[:60],
                 clean_code(payload.header.termsCod)[:1],
                 user_code,
+                legacy_order_phone_number,
                 discount_amount,
                 user_code,
                 order_date,
