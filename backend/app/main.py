@@ -34,6 +34,7 @@ SALES_USERS = [
     "TINA",
     "JUDY",
     "RAINNIE",
+    "ISIDRO",
     "VON",
     "LINA",
     "WEI",
