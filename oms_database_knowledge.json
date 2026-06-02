@@ -201,7 +201,8 @@
         "COD_DESC": "COD flag/description."
       },
       "read_rule": "Order header is read from orders and joined to customer for display fallback fields.",
-      "legacy_phone_write_rule": "Verified by comparing iPad order 10218 with older legacy OMS orders for customer 7186877805: legacy OMS populates orders.CUS_SHIP_CHG with the phone digits while CUS_SHIP_TEL2 is usually NULL. Keep writing CUS_SHIP_TEL2 for web compatibility, but also write CUS_SHIP_CHG so the legacy OMS can reopen/print web-created orders with the phone present. Do not assume CUS_SHIP_CHG is always the selected ship-to phone when billing and ship-to differ; verify those cases separately."
+      "legacy_phone_write_rule": "Verified with orders 10617/11469 and chain-store customer 3475251935: legacy OMS uses orders.CUS_SHIP_CHG as the numeric ship-to/order phone printed after reopening an order. CUS_SHIP_TEL2 is usually NULL in legacy OMS orders, but the web app also writes it for web-side display compatibility.",
+      "sp_sm_adr_rule": "SP_SM_ADR controls how legacy OMS interprets the ship-to source. If a selected chain-store STORE_NUM is present, write S. If the customer master has SHP_* shipping fields and no STORE_NUM is selected, write N. Otherwise use Y for normal billing/default ship-to orders. Writing S for every non-empty ship-to address can make legacy OMS print a blank/0000000000 ship-to phone."
     },
     "ord_log": {
       "purpose": "Sales order line items.",

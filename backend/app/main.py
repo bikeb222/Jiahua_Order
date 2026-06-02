@@ -356,6 +356,42 @@ def get_ship_code_for_transaction(cursor, ship_desc: str | None) -> int:
     return int(row["shipCode"]) if row and row.get("shipCode") is not None else 0
 
 
+def get_order_ship_address_flag_for_transaction(
+    cursor,
+    customer_id: str,
+    store_number: str | None,
+    ship_name: str | None,
+    ship_address: str | None,
+) -> str:
+    if clean_code(store_number):
+        return "S"
+
+    row = cursor_one(
+        cursor,
+        """
+        SELECT TOP 1
+            SHP_CUS_NM AS shipCustomerName,
+            SHP_ADDRESS AS shipAddress,
+            SHP_ADDRESS2 AS shipAddress2,
+            SHP_CITY AS shipCity,
+            SHP_STATE AS shipState,
+            SHP_ZIP AS shipZip
+        FROM dbo.customer
+        WHERE CUS_ID = ?
+        """,
+        (customer_id,),
+    ) or {}
+    has_customer_ship_to = any(
+        clean_code(row.get(field))
+        for field in ("shipCustomerName", "shipAddress", "shipAddress2", "shipCity", "shipState", "shipZip")
+    )
+    if has_customer_ship_to:
+        return "N"
+    if clean_code(ship_name or ship_address):
+        return "Y"
+    return ""
+
+
 def get_product_cost_for_transaction(cursor, product_code: str, warehouse: str) -> dict:
     return cursor_one(
         cursor,
@@ -1238,6 +1274,13 @@ def save_local_oms_order(payload: DraftSaveRequest) -> dict:
         cursor = conn.cursor()
         require_inventory_rows_for_transaction(cursor, payload.lines, warehouse)
         ship_code = get_ship_code_for_transaction(cursor, ship_desc)
+        ship_address_flag = get_order_ship_address_flag_for_transaction(
+            cursor,
+            customer_id,
+            store_number,
+            payload.header.shipName,
+            payload.header.shipAddress,
+        )
         so_number = reserve_next_local_so_number(cursor)
         order_columns = [
             "ORD_NUM", "CUS_ID", "ORD_DT", "ORD_AMT", "PAID_AMT", "INVS_TAX", "TAX_RATE",
@@ -1258,7 +1301,7 @@ def save_local_oms_order(payload: DraftSaveRequest) -> dict:
         order_values = [
             so_number, customer_id, order_date, merchandise_total, 0, payload.totals.tax, payload.totals.taxRate,
             0, payload.totals.handling, discount_rate, 0, clean_code(payload.header.salesOne)[:4], clean_code(payload.header.salesTwo)[:4],
-            order_time, "S" if clean_code(payload.header.shipName or payload.header.shipAddress) else "", clean_code(payload.header.poNumber)[:100], ship_code, 0, ship_date,
+            order_time, ship_address_flag, clean_code(payload.header.poNumber)[:100], ship_code, 0, ship_date,
             clean_code(payload.header.terms)[:15], payload.header.termsDays or 0, clean_code(payload.header.termsCod)[:1], 0,
             clean_code(payload.header.shipName or payload.header.customerName)[:60], clean_code(payload.header.shipAddress)[:60], "", ship_city_state_zip,
             clean_code(payload.header.shipCity)[:35], clean_code(payload.header.shipState)[:15], clean_code(payload.header.shipZip)[:15],
@@ -1453,6 +1496,13 @@ def update_local_oms_order(so_number: int, payload: DraftSaveRequest) -> dict:
             raise HTTPException(status_code=404, detail=f"S/O {so_number} not found.")
         require_inventory_rows_for_transaction(cursor, payload.lines, warehouse)
         ship_code = get_ship_code_for_transaction(cursor, ship_desc)
+        ship_address_flag = get_order_ship_address_flag_for_transaction(
+            cursor,
+            customer_id,
+            store_number,
+            payload.header.shipName,
+            payload.header.shipAddress,
+        )
         old_lines = cursor_all(
             cursor,
             """
@@ -1493,6 +1543,7 @@ def update_local_oms_order(so_number: int, payload: DraftSaveRequest) -> dict:
                 SALES_NUM = ?,
                 SALES_NUM2 = ?,
                 ORD_TIME = ?,
+                SP_SM_ADR = ?,
                 PO_NUM = ?,
                 SHIP_CD = ?,
                 SHIP_DT = ?,
@@ -1537,6 +1588,7 @@ def update_local_oms_order(so_number: int, payload: DraftSaveRequest) -> dict:
                 clean_code(payload.header.salesOne)[:4],
                 clean_code(payload.header.salesTwo)[:4],
                 order_time,
+                ship_address_flag,
                 clean_code(payload.header.poNumber)[:100],
                 ship_code,
                 ship_date,
