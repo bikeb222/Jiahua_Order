@@ -188,7 +188,7 @@ function sortSalesPeople(items) {
 
 function setDefaultLookups() {
   el("shipVia").value = state.lookups.orderTypes[0]?.shipDescription || "";
-  el("salesOne").value = state.lookups.sales[0]?.salesNumber || "";
+  el("salesOne").value = "";
 }
 
 function showDialog(dialogId = null) {
@@ -1065,7 +1065,7 @@ async function initialize() {
   state.lookups.sales = sales;
 
   fillSelect(el("shipVia"), orderTypes, "shipDescription", "shipDescription", "");
-  fillSelect(el("salesOne"), state.lookups.sales, "salesNumber", "companyName", "");
+  fillSelect(el("salesOne"), state.lookups.sales, "salesNumber", "companyName", " ");
   setDefaultLookups();
 
   if (await applyLaunchParams()) {
