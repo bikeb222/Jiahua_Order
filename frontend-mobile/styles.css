@@ -567,6 +567,7 @@ td input.editable {
 }
 
 .line-description {
+  caret-color: #000;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -1729,7 +1729,7 @@ function renderLines() {
     row.innerHTML = `
       <td>${index + 1}</td>
       <td class="item-detail-cell" title="${productCode}" data-product-code="${productCode}">${productCode}</td>
-      <td title="${description}"><input id="lineDescription-${index}" class="editable line-description" data-index="${index}" type="text" inputmode="none" maxlength="60" value="${description}" readonly ${disabled} /></td>
+      <td title="${description}"><input id="lineDescription-${index}" class="editable line-description" data-index="${index}" type="text" inputmode="none" maxlength="60" value="${description}" ${disabled} /></td>
       <td class="number">${line.pack || ""}</td>
       <td><input class="editable line-qty" data-index="${index}" type="text" inputmode="none" value="${qtyValue}" readonly ${disabled} /></td>
       <td>${unitName}</td>
