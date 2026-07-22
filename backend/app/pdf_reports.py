@@ -27,6 +27,12 @@ INVOICE_ROW_LEADING = 10
 INVOICE_ROW_HEIGHT = 14.3
 INVOICE_BODY_FONT_SIZE = 8
 INVOICE_DESC_FONT_SIZE = 7.8
+PICKING_COLS = [LEFT, 112, 160, 340, 386, 418, 456, 490, 528, 562, RIGHT]
+PICKING_ROW_START_Y = 477
+PICKING_TABLE_BOTTOM = 86
+PICKING_ROW_MIN_HEIGHT = 24
+PICKING_DESC_FONT_SIZE = 10
+PICKING_DESC_LEADING = 11
 FONT_REGULAR = "Arial"
 FONT_BOLD = "Arial-Bold"
 FONT_ITALIC = "Arial-Italic"
@@ -322,6 +328,36 @@ def split_invoice_lines(lines: list[dict]) -> list[list[dict]]:
     return pages
 
 
+def picking_description_lines(row: dict) -> list[str]:
+    width = PICKING_COLS[3] - PICKING_COLS[2] - 8
+    return wrap_to_width(row.get("description"), width, FONT_REGULAR, PICKING_DESC_FONT_SIZE, 3)
+
+
+def picking_row_height(row: dict) -> float:
+    description_height = len(picking_description_lines(row)) * PICKING_DESC_LEADING + 8
+    return max(PICKING_ROW_MIN_HEIGHT, description_height)
+
+
+def split_picking_lines(lines: list[dict]) -> list[list[dict]]:
+    if not lines:
+        return [[]]
+    pages: list[list[dict]] = []
+    page: list[dict] = []
+    used_height = 0.0
+    height_limit = PICKING_ROW_START_Y - PICKING_TABLE_BOTTOM
+    for row in lines:
+        row_height = picking_row_height(row)
+        if page and used_height + row_height > height_limit:
+            pages.append(page)
+            page = []
+            used_height = 0.0
+        page.append(row)
+        used_height += row_height
+    if page:
+        pages.append(page)
+    return pages
+
+
 def invoice_print_by(h: dict) -> str:
     return first_text(h.get("salesOne"), os.environ.get("ORDER_PDF_PRINT_BY"), h.get("printBy"))
 
@@ -488,7 +524,7 @@ def draw_invoice_terms(c: Canvas) -> None:
 
 def picking_list_pdf(order: dict) -> bytes:
     lines_for_print = order.get("lines", [])
-    pages = split_lines(lines_for_print, 16)
+    pages = split_picking_lines(lines_for_print)
     out = BytesIO()
     c = Canvas(out, pagesize=letter)
     for page_no, page_lines in enumerate(pages, start=1):
@@ -554,7 +590,7 @@ def draw_picking_meta(c: Canvas, h: dict) -> None:
 
 def draw_picking_table(c: Canvas, lines_: list[dict]) -> None:
     top, bottom = 507, 86
-    cols = [LEFT, 112, 160, 340, 386, 418, 456, 490, 528, 562, RIGHT]
+    cols = PICKING_COLS
     headers = ["Item No.", "Loc", "Description", "Class\nColor", "Pc/Cs", "Ship Qty", "Cases", "LoosePc", "Weight", "Volume"]
     for x in cols:
         line(c, x, top, x, bottom)
@@ -567,8 +603,9 @@ def draw_picking_table(c: Canvas, lines_: list[dict]) -> None:
         for part in parts:
             draw_text(c, (cols[i] + cols[i + 1]) / 2, yy, part, 9, bold=True, align="center", font_name=FONT_BOLD)
             yy -= 8
-    y = 477
+    y = PICKING_ROW_START_Y
     for row in lines_:
+        row_height = picking_row_height(row)
         quantity = float(row.get("quantity") or 0)
         pack = float(row.get("pack") or 0)
         cases = int(quantity // pack) if pack else ""
@@ -578,7 +615,8 @@ def draw_picking_table(c: Canvas, lines_: list[dict]) -> None:
         draw_text(c, cols[0] + 2, y, row.get("productCode"), 10, font_name=FONT_REGULAR)
         draw_text(c, cols[0] + 34, y - 13, f"Ws#: {row.get('warehouse') or ''}", 7)
         draw_text(c, cols[1] + 2, y, row.get("location") or "", 10, font_name=FONT_REGULAR)
-        draw_wrapped(c, cols[2] + 2, y, 29, row.get("description"), 10, 11, font_name=FONT_REGULAR)
+        for index, desc in enumerate(picking_description_lines(row)):
+            draw_text(c, cols[2] + 2, y - (index * PICKING_DESC_LEADING), desc, PICKING_DESC_FONT_SIZE, font_name=FONT_REGULAR)
         draw_text(c, (cols[3] + cols[4]) / 2, y, row.get("classCode") or "", 10, align="center", font_name=FONT_REGULAR)
         if text(row.get("classCode")):
             dark_line(c, cols[3] + 8, y - 4, cols[4] - 8, y - 4)
@@ -599,7 +637,7 @@ def draw_picking_table(c: Canvas, lines_: list[dict]) -> None:
         draw_text(c, cols[10] - 4, y, money(row_volume) if row_volume else "", 10, align="right", font_name=FONT_REGULAR)
         if row_volume:
             dark_line(c, cols[9] + 12, y - 4, cols[10] - 4, y - 4)
-        y -= 24
+        y -= row_height
 
 
 def draw_picking_footer(c: Canvas, lines_: list[dict]) -> None:
