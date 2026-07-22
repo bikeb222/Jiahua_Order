@@ -885,6 +885,13 @@ td input.editable {
   border: 1px solid #7eb2b0;
 }
 
+.line-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
 .empty-row td {
   height: 48px;
   color: var(--muted);

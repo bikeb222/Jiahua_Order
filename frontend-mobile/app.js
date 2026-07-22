@@ -820,6 +820,8 @@ function confirmAlphaKeypad() {
     addScannedProduct();
   } else if (targetId === "customerProductSearch") {
     searchCustomerPurchasedProducts();
+  } else if (targetId?.startsWith("lineDescription-")) {
+    focusScanInput();
   }
 }
 
@@ -1688,6 +1690,7 @@ function renderLines() {
     body.appendChild(row);
     hideQtyKeypad();
     hidePriceKeypad();
+    hideAlphaKeypad();
     return;
   }
 
@@ -1695,6 +1698,7 @@ function renderLines() {
   if (readOnly) {
     hideQtyKeypad();
     hidePriceKeypad();
+    hideAlphaKeypad();
   } else if (state.qtyKeypad.activeIndex >= state.lines.length) {
     state.qtyKeypad.activeIndex = state.lines.length - 1;
     state.qtyKeypad.value = qtyValueText(state.lines[state.qtyKeypad.activeIndex].quantity);
@@ -1725,7 +1729,7 @@ function renderLines() {
     row.innerHTML = `
       <td>${index + 1}</td>
       <td class="item-detail-cell" title="${productCode}" data-product-code="${productCode}">${productCode}</td>
-      <td title="${description}">${description}</td>
+      <td title="${description}"><input id="lineDescription-${index}" class="editable line-description" data-index="${index}" type="text" inputmode="none" maxlength="60" value="${description}" readonly ${disabled} /></td>
       <td class="number">${line.pack || ""}</td>
       <td><input class="editable line-qty" data-index="${index}" type="text" inputmode="none" value="${qtyValue}" readonly ${disabled} /></td>
       <td>${unitName}</td>
@@ -1752,6 +1756,12 @@ function syncLineFromInput(event) {
   }
   if (target.classList.contains("line-price")) {
     line.unitPrice = Number(target.value || 0);
+  }
+  if (target.classList.contains("line-description")) {
+    line.description = target.value.slice(0, 60);
+    target.value = line.description;
+    target.title = line.description;
+    return;
   }
   line.extAmount = line.quantity * line.unitPrice;
   if (target.classList.contains("line-qty")) {
@@ -2211,6 +2221,11 @@ document.addEventListener("DOMContentLoaded", () => {
     positionAlphaKeypad();
   });
 
+  el("lineBody").addEventListener("input", (event) => {
+    if (event.target.closest(".line-description")) {
+      syncLineFromInput(event);
+    }
+  });
   el("lineBody").addEventListener("change", syncLineFromInput);
   el("lineBody").addEventListener("click", (event) => {
     const itemCell = event.target.closest(".item-detail-cell");
@@ -2228,6 +2243,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const priceInput = event.target.closest(".line-price");
     if (priceInput && state.mode !== "list") {
       activatePriceLine(Number(priceInput.dataset.index), { clearOnDigit: true });
+      return;
+    }
+
+    const descriptionInput = event.target.closest(".line-description");
+    if (descriptionInput && state.mode !== "list") {
+      hideQtyKeypad();
+      hidePriceKeypad();
+      toggleAlphaKeypad(descriptionInput.id, { title: "Description" });
       return;
     }
 

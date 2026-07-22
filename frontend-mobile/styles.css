@@ -566,6 +566,13 @@ td input.editable {
   border: 1px solid #7eb2b0;
 }
 
+.line-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
 tr.is-active-qty td {
   background: #fff8cf;
 }

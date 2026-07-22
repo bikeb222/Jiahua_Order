@@ -915,7 +915,7 @@ function renderLines() {
     row.innerHTML = `
       <td>${index + 1}</td>
       <td class="item-detail-cell" title="${productCode}" data-product-code="${productCode}">${productCode}</td>
-      <td title="${description}">${description}</td>
+      <td title="${description}"><input class="editable line-description" data-index="${index}" type="text" maxlength="60" value="${description}" ${disabled} /></td>
       <td class="number">${line.pack || ""}</td>
       <td><input class="editable line-qty" data-index="${index}" type="number" min="0.001" step="1" value="${line.quantity}" ${disabled} /></td>
       <td>${unitName}</td>
@@ -939,6 +939,12 @@ function syncLineFromInput(event) {
   }
   if (target.classList.contains("line-price")) {
     line.unitPrice = Number(target.value || 0);
+  }
+  if (target.classList.contains("line-description")) {
+    line.description = target.value.slice(0, 60);
+    target.value = line.description;
+    target.title = line.description;
+    return;
   }
   line.extAmount = line.quantity * line.unitPrice;
   renderLines();
@@ -1346,6 +1352,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("lineTableShell").addEventListener("wheel", handleLineTableWheel, { passive: true });
 
+  el("lineBody").addEventListener("input", (event) => {
+    if (event.target.closest(".line-description")) {
+      syncLineFromInput(event);
+    }
+  });
   el("lineBody").addEventListener("change", syncLineFromInput);
   el("lineBody").addEventListener("click", (event) => {
     const itemCell = event.target.closest(".item-detail-cell");
